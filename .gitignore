@@ -24,3 +24,7 @@ target
 .vscode/
 .idea/
 .github/instructions
+
+
+# Added by cargo
+/target
