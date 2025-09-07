@@ -26,16 +26,47 @@ If none arrives or data is invalid within 2s, the server closes the connection.
 
 ⸻
 
-3. Cryptographic Profile
+## 3. Cryptographic Suite (v1)
 
-qsh v1 fixes the cryptographic suite; no negotiation is supported.
-	•	Key exchange (hybrid KEM): X25519 + ML-KEM-768
-	•	Signatures (host & user): Ed25519 + ML-DSA-44 (Dilithium-2)
-	•	KDF: HKDF-SHA-384 with domain-separated labels
-	•	AEAD: XChaCha20-Poly1305 for handshake confirms and channel data
-	•	Rekeying: per-channel rekey after 1 MiB or 30 s, whichever first
-	•	0-RTT: not allowed
-	•	Resumption tickets: single-use, short-lived, still require fresh KEM
+qsh v1 fixes the cryptographic suite. There is **no cipher negotiation**.  
+All implementations must support the following algorithms:
+
+- **Key Exchange (KEM)**  
+  - Hybrid: `X25519` (ECDH) + `ML-KEM-768` (Kyber-768, NIST PQC)  
+  - Combined via `HKDF-Extract(SHA-384)` over concatenated shared secrets
+
+- **Signatures (host & user)**  
+  - Hybrid: `Ed25519` + `ML-DSA-44` (Dilithium-2, NIST PQC)  
+  - Both signatures must verify successfully
+
+- **Key Derivation**  
+  - `HKDF-SHA-384` with domain-separated labels:  
+    - `"qsh v1 hs"` – handshake secret  
+    - `"qsh v1 app"` – application traffic secret  
+    - `"qsh v1 exp"` – exporter secret  
+    - `"qsh v1 ch root"` – per-channel root key  
+    - `"qsh v1 ch rekey"` – per-channel rekey
+
+- **Encryption (symmetric)**  
+  - `XChaCha20-Poly1305` (AEAD)  
+  - 192-bit nonces avoid reuse across channels/rekeys
+
+- **Rekeying**  
+  - Each channel rekeys after **1 MiB** of traffic or **30 seconds**, whichever comes first  
+  - Rekey derivation:  
+    ```
+    k_ch' = HKDF(k_ch, "qsh v1 ch rekey" || counter)
+    ```
+
+- **0-RTT**  
+  - Not supported in v1  
+  - Resumption tickets are single-use, short-lived, and always require a fresh KEM
+
+---
+
+**Rationale:**  
+Fixing the suite eliminates downgrade attacks, simplifies the spec, and guarantees interoperability.  
+Future updates (e.g., larger PQ parameters) will be released as new protocol versions (`qsh v2`), not as negotiable options within v1.
 
 ⸻
 
