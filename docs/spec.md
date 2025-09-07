@@ -8,24 +8,24 @@ Clarifications Incorporated (2025-09): This revision folds in normative decision
 
 ## 1. Ports & Transports
 
-	•	Default ports
-	•	22/UDP — preferred transport, qsh over QUIC (ALPN=qshq/1)
-	•	22/TCP — fallback transport, qsh over TCP (ALPN=qsht/1)
-	•	Client connection order
-	1.	Attempt QUIC on UDP/22.
-	2.	If no ACCEPT within ~300–500 ms, attempt TCP/22 in parallel.
-	3.	First successful handshake wins; abort the other.
+- Default ports
+- 22/UDP — preferred transport, qsh over QUIC (ALPN=qshq/1)
+- 22/TCP — fallback transport, qsh over TCP (ALPN=qsht/1)
+- Client connection order
+  - Attempt QUIC on UDP/22.
+  - If no ACCEPT within ~300–500 ms, attempt TCP/22 in parallel.
+  - First successful handshake wins; abort the other.
 
 ⸻
 
 ## 2. Legacy Compatibility
 
-	•	On TCP connect, the server always sends the ASCII preface:
-QSH1\n
-	•	This causes legacy SSH clients to fail quickly with “Protocol mismatch.”
-	•	After sending the preface, the server expects a qsh HELLO.
-If none arrives or data is invalid within 2s, the server closes the connection.
-	•	No other reject messages are sent. Constant behavior minimizes fingerprinting.
+- On TCP connect, the server always sends the ASCII preface:
+`qsh1\n'
+- This causes legacy SSH clients to fail quickly with “Protocol mismatch.”
+- After sending the preface, the server expects a qsh HELLO.
+- If none arrives or data is invalid within 2s, the server closes the connection.
+- No other reject messages are sent. Constant behavior minimizes fingerprinting.
 
 ⸻
 
@@ -34,63 +34,71 @@ If none arrives or data is invalid within 2s, the server closes the connection.
 Fixed suite: no negotiation and no algorithm identifiers on the wire (implicit by ALPN + version).
 
 Key Encapsulation (Hybrid KEM)
-* X25519 + ML-KEM-768 (canonical label: ML-KEM-768). Concatenate shared secrets without length prefixes:
+
+- X25519 + ML-KEM-768 (canonical label: ML-KEM-768). Concatenate shared secrets without length prefixes:
 	`combined_kem_secret = x25519_shared || mlkem_shared`.
-* HKDF-Extract(SHA-384) input = combined_kem_secret. Salt is the label where shown below.
+- HKDF-Extract(SHA-384) input = combined_kem_secret. Salt is the label where shown below.
 
 Signatures (Hybrid, host & user)
-* Ed25519 + ML-DSA-44 (canonical label: ML-DSA-44). Both signatures MUST verify.
+
+- Ed25519 + ML-DSA-44 (canonical label: ML-DSA-44). Both signatures MUST verify.
 
 HKDF-SHA-384 Labels (HKDF-Expand with explicit L):
-* "qsh v1 hs" (handshake secret)
-* "qsh v1 app" (application traffic root)
-* "qsh v1 exp" (exporter interface)
-* "qsh v1 confirm" (confirm key seed; directional)
-* "qsh v1 ch root" (per-channel root)
-* "qsh v1 ch rekey" (channel key chaining)
+
+- "qsh v1 hs" (handshake secret)
+- "qsh v1 app" (application traffic root)
+- "qsh v1 exp" (exporter interface)
+- "qsh v1 confirm" (confirm key seed; directional)
+- "qsh v1 ch root" (per-channel root)
+- "qsh v1 ch rekey" (channel key chaining)
 
 AEAD
-* XChaCha20-Poly1305 for channel payloads and confirm tags.
-* 192-bit nonce = 128-bit prefix (per channel,direction,rekey-epoch) || 64-bit counter.
+
+- XChaCha20-Poly1305 for channel payloads and confirm tags.
+-  192-bit nonce = 128-bit prefix (per channel,direction,rekey-epoch) || 64-bit counter.
 
 Directional Keys
-* Derive distinct c2s and s2c keys; do not rely on nonce partitioning alone.
+
+-  Derive distinct c2s and s2c keys; do not rely on nonce partitioning alone.
 
 Rekeying (Per Direction)
-* Trigger after 1 MiB plaintext sent OR 30 s since last rekey (whichever first).
-* Chaining:
-	`k_ch' = HKDF-Expand(k_ch, "qsh v1 ch rekey" || uint64(counter), key_len)` where counter starts at 0.
-* Forward secrecy window limited to last interval.
+
+- Trigger after 1 MiB plaintext sent OR 30 s since last rekey (whichever first).
+- Chaining:
+  -	`k_ch' = HKDF-Expand(k_ch, "qsh v1 ch rekey" || uint64(counter), key_len)` where counter starts at 0.
+- Forward secrecy window limited to last interval.
 
 Confirm Tags
-* `client_confirm` / `server_confirm` are AEAD tags over transcript_hash with empty plaintext, AAD = transcript_hash.
-* Keys:
-	`confirm_key_client = HKDF-Expand(hs_secret, "qsh v1 confirm client", 32)`
-	`confirm_key_server = HKDF-Expand(hs_secret, "qsh v1 confirm server", 32)`
-	Nonce = 24 zero bytes.
+
+- `client_confirm` / `server_confirm` are AEAD tags over transcript_hash with empty plaintext, AAD = transcript_hash.
+- Keys:
+  -	`confirm_key_client = HKDF-Expand(hs_secret, "qsh v1 confirm client", 32)`
+  -	`confirm_key_server = HKDF-Expand(hs_secret, "qsh v1 confirm server", 32)`
+- Nonce = 24 zero bytes.
 
 Exporter
-* `export(bytes L, context) = HKDF-Expand(app_secret, "qsh v1 exp" || context, L)` with L ≤ 256.
+
+- `export(bytes L, context) = HKDF-Expand(app_secret, "qsh v1 exp" || context, L)` with L ≤ 256.
 
 0-RTT
-* Not supported. Resumption tickets (OPTIONAL, Stage 3) still require fresh hybrid KEM.
+- Not supported. Resumption tickets (OPTIONAL, Stage 3) still require fresh hybrid KEM.
 
 Forbidden Deviations
-* No alternative algorithms, no negotiation extensions under `qshq/1` or `qsht/1`.
-* Nonce construction and chaining MUST match this spec.
+
+- No alternative algorithms, no negotiation extensions under `qshq/1` or `qsht/1`.
+- Nonce construction and chaining MUST match this spec.
 
 ⸻
 
 ## 4. Identity & Trust
 
-
-	•	Host identity
-	•	Static hybrid signing key pinned on first connect (TOFU-plus).
-	•	Rotation: new key must be signed by old key.
-	•	User identity
-	•	Authorized hybrid keys (authorized_keys equivalent), or
-	•	Short-lived user certs (10–60 min) signed by a qsh-CA.
-	•	No passwords, PAM, or policy engines. Privilege enforcement is the host’s job.
+- Host identity
+-	Static hybrid signing key pinned on first connect (TOFU-plus).
+- Rotation: new key must be signed by old key.
+-	User identity
+-	Authorized hybrid keys (authorized_keys equivalent), or
+-	Short-lived user certs (10–60 min) signed by a qsh-CA.
+-	No passwords, PAM, or policy engines. Privilege enforcement is the host’s job.
 
 When a CA is configured, the server MAY disable `authorized_keys` and require `user_cert_chain`. This is a deployment choice and does not affect the wire protocol.
 
@@ -178,11 +186,18 @@ Multiplex multiple logical channels per connection.
 
 ### 6.1 Channel Types
 
-v1 required: TTY (interactive shell), EXEC (single command). EXEC exit status reported via CTRL EXIT.
-Future: QFTP (minimal file protocol multiplexed within one channel), PFWD (port forwarding, direction field).
+v1 required: 
+
+- TTY (interactive shell), 
+- EXEC (single command). EXEC exit status reported via CTRL EXIT.
+Future: 
+
+- QFTP (minimal file protocol multiplexed within one channel)
+- PFWD (port forwarding, direction field).
 
 ### 6.2 Control / Data Frames (deterministic CBOR)
 
+```
 OPEN { id, kind, cmd?, env?, winsize?, pad? }
 ACCEPT { id, features, initial_window }
 REJECT { id, code, reason? }
@@ -190,15 +205,18 @@ DATA { id, seq, ciphertext }         # seq uint64 (wrap modulo 2^64)
 CTRL { id, signal, payload? }        # signals: WINCH, SIGINT, EOF, CLOSE, WINDOW_UPDATE, EXIT
 REKEY_REQ { id, counter }
 REKEY_ACK { id, counter }
+```
 
-WINDOW_UPDATE uses CTRL with payload { delta: uint64 } (delta bytes additional credit). EXIT carries payload { code: int, msg?: text }.
-OPEN.cmd max 256 bytes UTF-8 NFC. Environment constraints §8.
+- WINDOW_UPDATE uses CTRL with payload { delta: uint64 } (delta bytes additional credit). 
+- EXIT carries payload { code: int, msg?: text }.
+- OPEN.cmd max 256 bytes UTF-8 NFC. Environment constraints §8.
 
 ### 6.3 Rekeying
 
 Per direction triggers (1 MiB OR 30 s). Either peer may initiate on threshold crossing. Race: if both send REKEY_REQ concurrently, lower channel id wins; other discards.
 
 Procedure:
+
 1. Initiator sends REKEY_REQ { counter = next } under old key.
 2. Receiver derives tentative new key via chaining, replies REKEY_ACK.
 3. Both switch after ACK; old-key DATA accepted until all seq < cutover_seq consumed.
@@ -213,8 +231,16 @@ Nonce counters reset to 0 post rekey. If ACK not received within 500 ms, retrans
 ## 7. Error Handling & Codes
 
 Errors encoded as integers referencing a registry. Suggested symbolic mapping:
-Connection: PROTOCOL_ERROR, BAD_IDENTITY (on-wire indistinguishable from generic failure for privacy), REPLAY, TIMEOUT.
-Channel: PERMISSION_DENIED, NO_SUCH_CMD, RESOURCE_LIMIT, DECRYPT_FAIL.
+- Connection: 
+  - PROTOCOL_ERROR
+  - BAD_IDENTITY (on-wire indistinguishable from generic failure for privacy)
+  - REPLAY
+  - TIMEOUT.
+- Channel: 
+  - PERMISSION_DENIED
+  - NO_SUCH_CMD
+  - RESOURCE_LIMIT
+  - DECRYPT_FAIL.
 
 After PROTOCOL_ERROR client SHOULD attempt fallback transport once. ≥3 consecutive DECRYPT_FAIL channel closures triggers connection termination. BAD_IDENTITY indistinguishable on-wire from generic failure.
 
@@ -250,24 +276,43 @@ Length Limits:
 
 ## 9. Operational Defaults & Limits
 
-Ports: 22/UDP (QUIC), 22/TCP (fallback). Attempt QUIC; if no ACCEPT within 300–500 ms, start TCP.
-QUIC params (RECOMMENDED defaults): max_idle_timeout=30s, initial_max_data=1 MiB, initial_max_streams_bidi=100.
-Rekey thresholds: 1 MiB / 30 s per direction.
-Resumption tickets (Stage 3): single-use, default lifetime 600 s, target size ≤512 bytes, bound to (user key hash, host key fingerprint, ALPN, nonces, capabilities, timestamp). Server tracks nonces until expiry (replay prevention).
+Ports: 22/UDP (QUIC), 22/TCP (fallback). 
+Attempt QUIC; if no ACCEPT within 300–500 ms, start TCP.
+
+QUIC params (RECOMMENDED defaults): 
+
+- max_idle_timeout=30s
+- initial_max_data=1 MiB
+- initial_max_streams_bidi=100.
+
+Rekey thresholds: 
+
+- 1 MiB / 30 s per direction.
+
+Resumption tickets (Stage 3): 
+
+- single-use
+- default lifetime 600 s
+- target size ≤512 bytes, 
+- bound to (user key hash, host key fingerprint, ALPN, nonces, capabilities, timestamp). 
+- Server tracks nonces until expiry (replay prevention).
+
 Memory cap unauthenticated connection ≤256 KiB.
+
 Logging: JSON lines with canonical field order (e.g. time, level, path, user?, host, rtt_ms, addr?).
 
 ⸻
 
 ## 10. Future Extensions (Non-Normative)
 
-QFTP (minimal file subsystem) – new capability string `QFTP`.
-PFWD (port forwarding) – capability `PFWD` with direction/address fields.
-Host key rotation object: `{ new_host_key, old_host_key_signature, valid_from? }` (overlap grace window). If old key compromised without signature, out-of-band re-bootstrap required.
-Resumption tickets (Stage 3) as in §9.
-Transparency logs for host key pinning.
-Post-quantum-only mode via new ALPN (e.g. `qshq/1-pq`).
-Reserved CBOR keys for v2+ extensions (ignore unknown under v1).
+- QFTP (minimal file subsystem) – new capability string `QFTP`.
+- PFWD (port forwarding) – capability `PFWD` with direction/address fields.
+- Host key rotation object: `{ new_host_key, old_host_key_signature, valid_from? }` (overlap grace window). If old key compromised without signature, out-of-band re-bootstrap required.
+- Resumption tickets (Stage 3) as in §9.
+- Transparency logs for host key pinning.
+- Post-quantum-only mode via new ALPN (e.g. `qshq/1-pq`).
+- Reserved CBOR keys for v2+ extensions (ignore unknown under v1).
+
 ⸻
 
 ## 11. Security Considerations
