@@ -19,7 +19,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 - [ ] Adaptive padding + 30 s encrypted keepalives  
 - [ ] Error code registry & escalation rules  
 - [ ] Exporter interface  
-- [ ] Logging modes (privacy-minimal, standard)  
+- [ ] Logging modes (privacy-minimal, standard, enterprise)  
 
 ---
 
@@ -37,6 +37,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 - [ ] Resumption tickets (single-use, 10 min default, fresh KEM)  
 - [ ] Host key rotation (signed rotation object, grace overlap)  
 - [ ] Audit logs (per-channel MAC chain)  
+- [ ] Optional `revocation_policy` advisory hint ("none"|"soft"|"hard")  
 
 ---
 
