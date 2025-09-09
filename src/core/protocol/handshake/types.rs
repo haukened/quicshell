@@ -1,51 +1,54 @@
-//! Handshake message type definitions for qsh v1 (spec §5.1).
-//!
-//! This module is the single source of truth for the wire schema of the
-//! four‑message handshake.
-//! It intentionally keeps **all secret material out** (only public keys,
-//! signatures, ciphertexts, nonces, and advisory metadata) so zeroization is
-//! not required for the types themselves.
-//!
-//! This module defines the CBOR-serializable structures exchanged during the
-//! four‑message handshake:
-//! `HELLO -> ACCEPT -> FINISH_CLIENT -> FINISH_SERVER`.
-//!
-//! Goals:
-//! * Enforce wire‑format length invariants at the type level where practical (fixed-size
-//!   newtypes for nonces, public keys, ciphertexts, signatures).
-//! * Provide explicit, typed validation errors via `HandshakeError` for semantic checks
-//!   not encoded in the Rust type system (capability ordering, certificate list bounds, etc.).
-//! * Keep defensive size limits private constants while documenting their intent.
-//!
-//! Notes:
-//! * Padding fields (`pad`) are excluded from any future transcript hash (per spec rationale).
-//! * Baseline capabilities `EXEC` and `TTY` are mandatory and validated.
-//! * AEAD confirmation tags (`client_confirm`, `server_confirm`) are fixed to `AEAD_TAG_LEN` (=16) bytes.
-//! * No private / secret key material is represented here; zeroization is not required.
-//! * `UserAuth` uses a custom deserializer to reject ambiguous inputs containing both
-//!   `raw_keys` and `user_cert_chain` (emits `HandshakeError::UserAuthAmbiguous`).
-//!
-//! Future (backlog):
-//! * Generic length error consolidation. (Partially complete: `LengthMismatch`.)
-//! * Additional ergonomic constructors and examples (selected constructors added).
-//!
-//! # Example (constructing a minimal `Hello`)
-//! ```ignore
-//! use quicshell::core::protocol::handshake::types::{
-//!     Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
-//! };
-//! // Dummy zeroed values for illustration ONLY – real code must use cryptographically
-//! // secure randomness / proper key generation.
-//! let kem = KemClientEphemeral { x25519_pub: X25519Pub([0;32]), mlkem_pub: Mlkem768Pub([0;1184]) };
-//! let nonce = Nonce32([0;32]);
-//! let caps = vec![Capability::parse("EXEC").unwrap(), Capability::parse("TTY").unwrap()];
-//! // Calling the `new` constructor validates the message immediately.
-//! let h_res = Hello::new(kem, nonce, caps, None);
-//! match h_res {
-//!     Ok(h) => println!("Constructed valid Hello: {:?}", h),
-//!     Err(e) => eprintln!("Failed to construct Hello: {}", e),
-//! }
-//! ```
+/*!
+Handshake message type definitions for qsh v1 (spec §5.1).
+
+This module is the single source of truth for the wire schema of the
+four‑message handshake.
+It intentionally keeps **all secret material out** (only public keys,
+signatures, ciphertexts, nonces, and advisory metadata) so zeroization is
+not required for the types themselves.
+
+This module defines the CBOR-serializable structures exchanged during the
+four‑message handshake:
+`HELLO -> ACCEPT -> FINISH_CLIENT -> FINISH_SERVER`.
+
+Goals:
+* Enforce wire‑format length invariants at the type level where practical (fixed-size
+  newtypes for nonces, public keys, ciphertexts, signatures).
+* Provide explicit, typed validation errors via `HandshakeError` for semantic checks
+  not encoded in the Rust type system (capability ordering, certificate list bounds, etc.).
+* Keep defensive size limits private constants while documenting their intent.
+
+Notes:
+* Padding fields (`pad`) are excluded from any future transcript hash (per spec rationale).
+* Baseline capabilities `EXEC` and `TTY` are mandatory and validated.
+* AEAD confirmation tags (`client_confirm`, `server_confirm`) are fixed to `AEAD_TAG_LEN` (=16) bytes.
+* No private / secret key material is represented here; zeroization is not required.
+* `UserAuth` uses a custom deserializer to reject ambiguous inputs containing both
+  `raw_keys` and `user_cert_chain` (emits `HandshakeError::UserAuthAmbiguous`).
+
+Future (backlog):
+* Generic length error consolidation. (Partially complete: `LengthMismatch`.)
+* Additional ergonomic constructors and examples (selected constructors added).
+
+# Example (constructing a minimal `Hello`)
+```ignore
+use quicshell::core::protocol::handshake::types::{
+    Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
+};
+// Dummy zeroed values for illustration ONLY – real code must use cryptographically
+// secure randomness / proper key generation.
+let kem = KemClientEphemeral { x25519_pub: X25519Pub([0;32]), mlkem_pub: Mlkem768Pub([0;1184]) };
+let nonce = Nonce32([0;32]);
+let caps = vec![Capability::parse("EXEC").unwrap(), Capability::parse("TTY").unwrap()];
+// Calling the `new` constructor validates the message immediately.
+let h_res = Hello::new(kem, nonce, caps, None);
+match h_res {
+    Ok(h) => println!("Constructed valid Hello: {:?}", h),
+    Err(e) => eprintln!("Failed to construct Hello: {}", e),
+}
+```
+*/
+
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
