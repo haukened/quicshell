@@ -313,6 +313,8 @@ pub struct Hello {
 }
 
 impl Hello {
+    /// Validate semantic invariants (version, capabilities, pad size).
+    #[must_use]
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.v != 1 {
             return Err(HandshakeError::HelloBadVersion);
@@ -337,6 +339,31 @@ impl Hello {
             }
         }
         Ok(())
+    }
+
+    /// Construct a Hello and immediately validate it.
+    ///
+    /// Returns `Err` if semantic validation fails (e.g. missing baseline capabilities
+    /// or capability ordering issues). Prefer this over manual struct literal when
+    /// constructing external-facing values. Named `new` (despite being fallible)
+    /// because all constructions must validate; use a struct literal + `validate()`
+    /// manually only for internal/test code needing partial objects.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        kem_client_ephemeral: KemClientEphemeral,
+        client_nonce: Nonce32,
+        capabilities: Vec<Capability>,
+        pad: Option<Vec<u8>>,
+    ) -> Result<Self, HandshakeError> {
+        let h = Hello {
+            v: 1,
+            kem_client_ephemeral,
+            client_nonce,
+            capabilities,
+            pad,
+        };
+        h.validate()?;
+        Ok(h)
     }
 }
 
@@ -370,6 +397,8 @@ pub struct Accept {
 }
 
 impl Accept {
+    /// Validate semantic invariants (non-empty cert chain, size limits, ticket params, pad size).
+    #[must_use]
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.host_cert_chain.is_empty() {
             return Err(HandshakeError::AcceptEmptyCertChain);
@@ -391,6 +420,28 @@ impl Accept {
             }
         }
         Ok(())
+    }
+
+    /// Construct and validate an Accept message.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        kem_server_ephemeral: KemServerEphemeral,
+        host_cert_chain: Vec<Vec<u8>>,
+        server_nonce: Nonce32,
+        ticket_params: Option<TicketParams>,
+        revocation_policy: Option<String>,
+        pad: Option<Vec<u8>>,
+    ) -> Result<Self, HandshakeError> {
+        let a = Accept {
+            kem_server_ephemeral,
+            host_cert_chain,
+            server_nonce,
+            ticket_params,
+            revocation_policy,
+            pad,
+        };
+        a.validate()?;
+        Ok(a)
     }
 }
 
@@ -483,6 +534,8 @@ pub struct FinishClient {
 }
 
 impl FinishClient {
+    /// Validate semantic invariants (cert chain content when present, AEAD tag length, pad size).
+    #[must_use]
     pub fn validate(&self) -> Result<(), HandshakeError> {
         match &self.user_auth {
             UserAuth::RawKeys { raw_keys, sig } => {
@@ -511,6 +564,24 @@ impl FinishClient {
         }
         Ok(())
     }
+
+    /// Construct and validate a FinishClient message.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        kem_ciphertexts: KemCiphertexts,
+        user_auth: UserAuth,
+        client_confirm: Vec<u8>,
+        pad: Option<Vec<u8>>,
+    ) -> Result<Self, HandshakeError> {
+        let fc = FinishClient {
+            kem_ciphertexts,
+            user_auth,
+            client_confirm,
+            pad,
+        };
+        fc.validate()?;
+        Ok(fc)
+    }
 }
 
 /// Server `FINISH_SERVER` handshake message (spec §5.1).
@@ -529,6 +600,8 @@ pub struct FinishServer {
 }
 
 impl FinishServer {
+    /// Validate semantic invariants (AEAD tag length, ticket non-empty, pad size).
+    #[must_use]
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.server_confirm.len() != AEAD_TAG_LEN {
             return Err(HandshakeError::LengthMismatch { field: "FINISH_SERVER.server_confirm", expected: AEAD_TAG_LEN, actual: self.server_confirm.len() });
@@ -544,5 +617,21 @@ impl FinishServer {
             }
         }
         Ok(())
+    }
+
+    /// Construct and validate a FinishServer message.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        server_confirm: Vec<u8>,
+        resumption_ticket: Option<Vec<u8>>,
+        pad: Option<Vec<u8>>,
+    ) -> Result<Self, HandshakeError> {
+        let fs = FinishServer {
+            server_confirm,
+            resumption_ticket,
+            pad,
+        };
+        fs.validate()?;
+        Ok(fs)
     }
 }
