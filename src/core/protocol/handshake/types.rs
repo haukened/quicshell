@@ -371,6 +371,7 @@ pub struct KemClientEphemeral {
 /// Contains the client's ephemeral hybrid KEM public keys, a fresh nonce,
 /// and advisory capability tokens (must include baseline `EXEC` and `TTY`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Hello {
     /// Protocol version (must be 1)
     pub v: u8,
@@ -457,6 +458,7 @@ pub struct TicketParams {
 
 /// Server ACCEPT handshake message (spec §5.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Accept {
     pub kem_server_ephemeral: KemServerEphemeral,
     pub host_cert_chain: Vec<Vec<u8>>, // array even if length 1
@@ -594,6 +596,7 @@ impl<'de> Deserialize<'de> for UserAuth {
 /// raw public keys (with signatures) or a certificate chain (with signatures),
 /// and an AEAD confirmation tag binding transcript and key schedule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FinishClient {
     /// Hybrid KEM ciphertext set (currently just ML-KEM-768).
     pub kem_ciphertexts: KemCiphertexts,
@@ -662,6 +665,7 @@ impl FinishClient {
 ///
 /// Contains the server AEAD confirmation tag and optionally a resumption ticket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FinishServer {
     /// Server AEAD confirmation tag (same length semantics as client_confirm).
     /// Server AEAD confirmation tag (`AEAD_TAG_LEN` bytes) mirroring the client tag semantics.
