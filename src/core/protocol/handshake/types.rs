@@ -1,5 +1,11 @@
 //! Handshake message type definitions for qsh v1 (spec §5.1).
 //!
+//! This module is the single source of truth for the wire schema of the
+//! four‑message handshake.
+//! It intentionally keeps **all secret material out** (only public keys,
+//! signatures, ciphertexts, nonces, and advisory metadata) so zeroization is
+//! not required for the types themselves.
+//!
 //! This module defines the CBOR-serializable structures exchanged during the
 //! four‑message handshake:
 //! `HELLO -> ACCEPT -> FINISH_CLIENT -> FINISH_SERVER`.
@@ -20,17 +26,37 @@
 //!   `raw_keys` and `user_cert_chain` (emits `HandshakeError::UserAuthAmbiguous`).
 //!
 //! Future (backlog):
-//! * Generic length error consolidation.
-//! * (Done) Capability newtype and manual `UserAuth` deserialization.
-//! * Additional ergonomic constructors and examples.
+//! * Generic length error consolidation. (Partially complete: `LengthMismatch`.)
+//! * Additional ergonomic constructors and examples (selected constructors added).
+//!
+//! # Example (constructing a minimal `Hello`)
+//! ```ignore
+//! use quicshell::core::protocol::handshake::types::{
+//!     Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
+//! };
+//! // Dummy zeroed values for illustration ONLY – real code must use cryptographically
+//! // secure randomness / proper key generation.
+//! let kem = KemClientEphemeral { x25519_pub: X25519Pub([0;32]), mlkem_pub: Mlkem768Pub([0;1184]) };
+//! let nonce = Nonce32([0;32]);
+//! let caps = vec![Capability::parse("EXEC").unwrap(), Capability::parse("TTY").unwrap()];
+//! // Calling the `new` constructor validates the message immediately.
+//! let h_res = Hello::new(kem, nonce, caps, None);
+//! match h_res {
+//!     Ok(h) => println!("Constructed valid Hello: {:?}", h),
+//!     Err(e) => eprintln!("Failed to construct Hello: {}", e),
+//! }
+//! ```
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// ---- Spec-bound size constants (v1 parameter set) ----
-/// Fixed sizes derived from the qsh v1 handshake parameter set. These are
-/// enforced either by newtypes (preferred) or by validation logic until all
-/// fields are migrated.
+/// ---- Spec-bound size & defensive constants (v1 parameter set) ----
+/// Fixed sizes derived from the qsh v1 parameter set. Enforced at the type level
+/// (preferred) via newtypes. Defensive maxima (`*_MAX`) are NOT wire commitments;
+/// they bound resource usage and may change in a subsequent major version.
+///
+/// Baseline capabilities (`EXEC`, `TTY`) are validated at runtime; AEAD tag
+/// length is fixed (`AEAD_TAG_LEN`) and enforced with `LengthMismatch`.
 const NONCE_LEN: usize = 32;
 const X25519_PK_LEN: usize = 32;
 const ED25519_PK_LEN: usize = 32;
@@ -44,6 +70,46 @@ const PAD_MAX: usize = 1024; // defensive bound for pad
 const CERT_MAX: usize = 16 * 1024; // defensive bound per certificate blob
 const CAP_TOKEN_MAX: usize = 16; // max capability token length
 const CAP_COUNT_MAX: usize = 16; // max number of capability tokens
+
+// Manual serde needed for arrays > 32 bytes (serde derives only auto-impl up to 32 for generic T arrays).
+// Provide a helper macro to reduce repetition across large fixed-size byte newtypes.
+macro_rules! impl_large_array_newtype_serde {
+    ($name:ident, $len_const:ident) => {
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                // Serialize as a CBOR / Serde bytes string, not a sequence of u8.
+                s.serialize_bytes(&self.0)
+            }
+        }
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                struct V<const N: usize>;
+                impl<'de, const N: usize> serde::de::Visitor<'de> for V<N> {
+                    type Value = [u8; N];
+                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "byte string of length {}", N) }
+                    fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                        if v.len() != N { return Err(E::invalid_length(v.len(), &self)); }
+                        let mut a = [0u8; N];
+                        a.copy_from_slice(v);
+                        Ok(a)
+                    }
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                        let mut a = [0u8; N];
+                        let mut i = 0;
+                        while let Some(byte) = seq.next_element::<u8>()? {
+                            if i >= N { return Err(serde::de::Error::invalid_length(i, &self)); }
+                            a[i] = byte; i += 1;
+                        }
+                        if i != N { return Err(serde::de::Error::invalid_length(i, &self)); }
+                        Ok(a)
+                    }
+                }
+                let arr = d.deserialize_bytes(V::<{$len_const}> )?;
+                Ok($name(arr))
+            }
+        }
+    }
+}
 
 /// ---- Domain error type (idiomatic, typed) ----
 /// Captures semantic validation failures discovered post-deserialization.
@@ -135,6 +201,11 @@ fn is_ascii_upper_token(s: &str) -> bool {
 pub struct Capability(String);
 impl Capability {
     pub fn as_str(&self) -> &str { &self.0 }
+    /// Parse & validate a capability token from a `&str`.
+    /// Returns `Err` if it violates length / character constraints.
+    pub fn parse(s: &str) -> Result<Self, &'static str> {
+        if is_ascii_upper_token(s) { Ok(Capability(s.to_string())) } else { Err("invalid capability token") }
+    }
 }
 impl fmt::Debug for Capability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Capability({})", self.0) }
@@ -149,14 +220,6 @@ impl<'de> Deserialize<'de> for Capability {
         if !is_ascii_upper_token(s) { return Err(serde::de::Error::custom("invalid capability token")); }
         Ok(Capability(s.to_string()))
     }
-}
-
-/// Checks if a vector of strings is lexicographically ordered without duplicates and within count limit.
-fn is_lexicographic_no_dups(v: &[String]) -> bool {
-    if v.len() > CAP_COUNT_MAX {
-        return false;
-    }
-    v.windows(2).all(|w| w[0] < w[1]) // strict increasing ⇒ sorted & no dups
 }
 
 // Handshake messages for qsh v1 (spec §5.1).
@@ -196,7 +259,7 @@ impl X25519Pub {
 }
 
 /// ML-KEM-768 public key (1184 bytes) used in hybrid KEM ephemeral key pairs.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mlkem768Pub(pub [u8; MLKEM768_PK_LEN]);
 impl fmt::Debug for Mlkem768Pub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -210,7 +273,7 @@ impl Mlkem768Pub {
 }
 
 /// ML-KEM-768 ciphertext (1088 bytes) produced by encapsulation in FINISH_CLIENT.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mlkem768Ciphertext(pub [u8; MLKEM768_CT_LEN]);
 impl fmt::Debug for Mlkem768Ciphertext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -238,7 +301,7 @@ impl Ed25519Pub {
 }
 
 /// ML-DSA-44 (Dilithium level 2) public key (1312 bytes) for user authentication.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mldsa44Pub(pub [u8; MLDSA44_PK_LEN]);
 impl fmt::Debug for Mldsa44Pub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -252,7 +315,7 @@ impl Mldsa44Pub {
 }
 
 /// Ed25519 signature (64 bytes) over the transcript (hybrid user auth path).
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Ed25519Sig(pub [u8; ED25519_SIG_LEN]);
 impl fmt::Debug for Ed25519Sig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -266,7 +329,7 @@ impl Ed25519Sig {
 }
 
 /// ML-DSA-44 signature (2420 bytes) over the transcript (hybrid user auth path).
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mldsa44Sig(pub [u8; MLDSA44_SIG_LEN]);
 impl fmt::Debug for Mldsa44Sig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -278,6 +341,13 @@ impl Mldsa44Sig {
         &self.0
     }
 }
+
+// Apply manual serde impl macro for large arrays (>32 bytes; serde derive covers up to 32 only).
+impl_large_array_newtype_serde!(Mlkem768Pub, MLKEM768_PK_LEN);
+impl_large_array_newtype_serde!(Mlkem768Ciphertext, MLKEM768_CT_LEN);
+impl_large_array_newtype_serde!(Mldsa44Pub, MLDSA44_PK_LEN);
+impl_large_array_newtype_serde!(Ed25519Sig, ED25519_SIG_LEN);
+impl_large_array_newtype_serde!(Mldsa44Sig, MLDSA44_SIG_LEN);
 
 /// Hybrid user authentication signature bundle (Ed25519 + ML-DSA-44).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -527,7 +597,8 @@ pub struct FinishClient {
     /// Exactly one authentication form (`RawKeys` or `CertChain`).
     pub user_auth: UserAuth, // exactly one arm present
     /// AEAD confirmation tag verifying key schedule & transcript binding.
-    pub client_confirm: Vec<u8>, // AEAD tag
+    /// AEAD confirmation tag (`AEAD_TAG_LEN` bytes) binding transcript & key schedule.
+    pub client_confirm: Vec<u8>, // AEAD tag (length validated)
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Optional padding (random opaque bytes) excluded from transcript hash.
     pub pad: Option<Vec<u8>>,
@@ -590,7 +661,8 @@ impl FinishClient {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinishServer {
     /// Server AEAD confirmation tag (same length semantics as client_confirm).
-    pub server_confirm: Vec<u8>, // AEAD tag
+    /// Server AEAD confirmation tag (`AEAD_TAG_LEN` bytes) mirroring the client tag semantics.
+    pub server_confirm: Vec<u8>, // AEAD tag (length validated)
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Optional resumption ticket (opaque to client) enabling fast reconnect.
     pub resumption_ticket: Option<Vec<u8>>, // Stage 3 optional
