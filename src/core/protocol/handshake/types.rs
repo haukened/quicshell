@@ -1,5 +1,5 @@
 /*!
-Handshake message type definitions for qsh v1 (spec §5.1).
+`Handshake` message type definitions for `qsh` v1 (spec §5.1).
 
 This module is the single source of truth for the wire schema of the
 four‑message handshake.
@@ -12,39 +12,36 @@ four‑message handshake:
 `HELLO -> ACCEPT -> FINISH_CLIENT -> FINISH_SERVER`.
 
 Goals:
-* Enforce wire‑format length invariants at the type level where practical (fixed-size
-  newtypes for nonces, public keys, ciphertexts, signatures).
-* Provide explicit, typed validation errors via `HandshakeError` for semantic checks
-  not encoded in the Rust type system (capability ordering, certificate list bounds, etc.).
+* Enforce wire‑format length invariants at the type level where practical (fixed-size newtypes for nonces, public keys, ciphertexts, signatures).
+* Provide explicit, typed validation errors via [`HandshakeError`] for semantic checks not encoded in the Rust type system (capability ordering, certificate list bounds, etc.).
 * Keep defensive size limits private constants while documenting their intent.
 
 Notes:
-* Padding fields (`pad`) are excluded from any future transcript hash (per spec rationale).
-* Baseline capabilities `EXEC` and `TTY` are mandatory and validated.
-* AEAD confirmation tags (`client_confirm`, `server_confirm`) are fixed to `AEAD_TAG_LEN` (=16) bytes.
+* Padding fields ([`pad`]) are excluded from any future transcript hash (per spec rationale).
+* Baseline capabilities [`EXEC`] and [`TTY`] are mandatory and validated.
+* AEAD confirmation tags ([`client_confirm`], [`server_confirm`]) are fixed to [`AEAD_TAG_LEN`] (=16) bytes.
 * No private / secret key material is represented here; zeroization is not required.
-* `UserAuth` uses a custom deserializer to reject ambiguous inputs containing both
-  `raw_keys` and `user_cert_chain` (emits `HandshakeError::UserAuthAmbiguous`).
+* [`UserAuth`] uses a custom deserializer to reject ambiguous inputs containing both [`raw_keys`] and [`user_cert_chain`] (emits [`HandshakeError::UserAuthAmbiguous`]).
 
 Future (backlog):
-* Generic length error consolidation. (Partially complete: `LengthMismatch`.)
+* Generic length error consolidation. (Partially complete: [`LengthMismatch`].)
 * Additional ergonomic constructors and examples (selected constructors added).
 
-# Example (constructing a minimal `Hello`)
+# Example (constructing a minimal [`Hello`])
 ```ignore
 use quicshell::core::protocol::handshake::types::{
-    Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
+        Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
 };
 // Dummy zeroed values for illustration ONLY – real code must use cryptographically
 // secure randomness / proper key generation.
 let kem = KemClientEphemeral { x25519_pub: X25519Pub([0;32]), mlkem_pub: Mlkem768Pub([0;1184]) };
 let nonce = Nonce32([0;32]);
 let caps = vec![Capability::parse("EXEC").unwrap(), Capability::parse("TTY").unwrap()];
-// Calling the `new` constructor validates the message immediately.
+// Calling the [`new`] constructor validates the message immediately.
 let h_res = Hello::new(kem, nonce, caps, None);
 match h_res {
-    Ok(h) => println!("Constructed valid Hello: {:?}", h),
-    Err(e) => eprintln!("Failed to construct Hello: {}", e),
+        Ok(h) => println!("Constructed valid Hello: {:?}", h),
+        Err(e) => eprintln!("Failed to construct Hello: {}", e),
 }
 ```
 */
@@ -158,7 +155,7 @@ pub enum HandshakeError {
     /// A user certificate exceeded defensive size bound.
     #[error("FINISH_CLIENT.user_cert_chain element too large")]
     FinishClientCertTooLarge,
-    /// FINISH_CLIENT padding exceeded defensive size bound.
+    /// `FINISH_CLIENT` padding exceeded defensive size bound.
     #[error("FINISH_CLIENT.pad too large")]
     FinishClientPadTooLarge,
 
@@ -166,7 +163,7 @@ pub enum HandshakeError {
     /// Present resumption ticket was empty.
     #[error("FINISH_SERVER.resumption_ticket must not be empty when present")]
     FinishServerTicketEmpty,
-    /// FINISH_SERVER padding exceeded defensive size bound.
+    /// `FINISH_SERVER` padding exceeded defensive size bound.
     #[error("FINISH_SERVER.pad too large")]
     FinishServerPadTooLarge,
     // Generic / future use
@@ -188,7 +185,7 @@ fn is_ascii_upper_token(s: &str) -> bool {
             .all(|b| matches!(b, b'A'..=b'Z' | b'0'..=b'9' | b'_'))
 }
 
-/// Capability token (validated UPPERCASE ASCII, length 1..=CAP_TOKEN_MAX).
+/// Capability token (validated UPPERCASE ASCII, length 1..=`CAP_TOKEN_MAX`).
 ///
 /// Why a newtype over `String` (not an enum): the capability space is intentionally
 /// open/extensible; peers must forward & accept unknown advisory tokens without a
@@ -203,9 +200,16 @@ fn is_ascii_upper_token(s: &str) -> bool {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Capability(String);
 impl Capability {
+    /// Access the inner string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str { &self.0 }
-    /// Parse & validate a capability token from a `&str`.
-    /// Returns `Err` if it violates length / character constraints.
+    /// Parse and validate a capability token from a `&str`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the input string violates length or character constraints:
+    /// - Not ASCII uppercase (A-Z, 0-9, or `_`).
+    /// - Length is zero or exceeds `CAP_TOKEN_MAX`.
     pub fn parse(s: &str) -> Result<Self, &'static str> {
         if is_ascii_upper_token(s) { Ok(Capability(s.to_string())) } else { Err("invalid capability token") }
     }
@@ -243,11 +247,16 @@ impl fmt::Debug for Nonce32 {
 }
 impl Nonce32 {
     /// Access the inner byte array.
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; NONCE_LEN] {
         &self.0
     }
 
-    /// Create a Nonce32 from a byte slice, validating length.
+    /// Create a `Nonce32` from a byte slice, validating length.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the input slice length does not match `NONCE_LEN`.
     pub fn from_bytes(b: &[u8]) -> Result<Self, HandshakeError> {
         if b.len() != NONCE_LEN {
             return Err(HandshakeError::LengthMismatch { field: "Nonce32", expected: NONCE_LEN, actual: b.len() });
@@ -267,6 +276,7 @@ impl fmt::Debug for X25519Pub {
     }
 }
 impl X25519Pub {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; X25519_PK_LEN] {
         &self.0
     }
@@ -281,12 +291,13 @@ impl fmt::Debug for Mlkem768Pub {
     }
 }
 impl Mlkem768Pub {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; MLKEM768_PK_LEN] {
         &self.0
     }
 }
 
-/// ML-KEM-768 ciphertext (1088 bytes) produced by encapsulation in FINISH_CLIENT.
+/// ML-KEM-768 ciphertext (1088 bytes) produced by encapsulation in `FINISH_CLIENT`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mlkem768Ciphertext(pub [u8; MLKEM768_CT_LEN]);
 impl fmt::Debug for Mlkem768Ciphertext {
@@ -295,6 +306,7 @@ impl fmt::Debug for Mlkem768Ciphertext {
     }
 }
 impl Mlkem768Ciphertext {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; MLKEM768_CT_LEN] {
         &self.0
     }
@@ -309,6 +321,7 @@ impl fmt::Debug for Ed25519Pub {
     }
 }
 impl Ed25519Pub {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; ED25519_PK_LEN] {
         &self.0
     }
@@ -323,6 +336,7 @@ impl fmt::Debug for Mldsa44Pub {
     }
 }
 impl Mldsa44Pub {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; MLDSA44_PK_LEN] {
         &self.0
     }
@@ -337,6 +351,7 @@ impl fmt::Debug for Ed25519Sig {
     }
 }
 impl Ed25519Sig {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; ED25519_SIG_LEN] {
         &self.0
     }
@@ -351,6 +366,7 @@ impl fmt::Debug for Mldsa44Sig {
     }
 }
 impl Mldsa44Sig {
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; MLDSA44_SIG_LEN] {
         &self.0
     }
@@ -399,7 +415,14 @@ pub struct Hello {
 
 impl Hello {
     /// Validate semantic invariants (version, capabilities, pad size).
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any of the following invariants are violated:
+    /// - `v` is not 1
+    /// - Baseline capabilities `EXEC` or `TTY` missing
+    /// - Capabilities not strictly increasing or exceed `CAP_COUNT_MAX`
+    /// - Padding exceeds `PAD_MAX`
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.v != 1 {
             return Err(HandshakeError::HelloBadVersion);
@@ -414,25 +437,22 @@ impl Hello {
             || self
                 .capabilities
                 .windows(2)
-                .any(|w| !(w[0] < w[1]))
+                .any(|w| w[0] >= w[1])
         {
             return Err(HandshakeError::HelloBadCapsOrder);
         }
-        if let Some(p) = &self.pad {
-            if p.len() > PAD_MAX {
-                return Err(HandshakeError::HelloPadTooLarge);
-            }
+        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+            return Err(HandshakeError::HelloPadTooLarge);
         }
         Ok(())
     }
 
-    /// Construct a Hello and immediately validate it.
+    /// Construct a `Hello` and immediately validate it.
     ///
-    /// Returns `Err` if semantic validation fails (e.g. missing baseline capabilities
-    /// or capability ordering issues). Prefer this over manual struct literal when
-    /// constructing external-facing values. Named `new` (despite being fallible)
-    /// because all constructions must validate; use a struct literal + `validate()`
-    /// manually only for internal/test code needing partial objects.
+    /// # Errors
+    ///
+    /// Returns `Err` if semantic validation fails (see [`Hello::validate`]).
+    /// Prefer this over manual struct literal when constructing external-facing values.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         kem_client_ephemeral: KemClientEphemeral,
@@ -484,7 +504,13 @@ pub struct Accept {
 
 impl Accept {
     /// Validate semantic invariants (non-empty cert chain, size limits, ticket params, pad size).
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any of the following invariants are violated:
+    /// - Certificate chain is empty or contains an oversized certificate
+    /// - Ticket lifetime is zero or max uses is not 1
+    /// - Padding exceeds `PAD_MAX`
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.host_cert_chain.is_empty() {
             return Err(HandshakeError::AcceptEmptyCertChain);
@@ -500,15 +526,17 @@ impl Accept {
                 return Err(HandshakeError::AcceptTicketMaxUsesInvalid);
             }
         }
-        if let Some(p) = &self.pad {
-            if p.len() > PAD_MAX {
-                return Err(HandshakeError::AcceptPadTooLarge);
-            }
+        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+            return Err(HandshakeError::AcceptPadTooLarge);
         }
         Ok(())
     }
 
-    /// Construct and validate an Accept message.
+    /// Construct and validate an `Accept` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if semantic validation fails (see [`Accept::validate`]).
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         kem_server_ephemeral: KemServerEphemeral,
@@ -549,9 +577,9 @@ pub struct RawKeys {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum UserAuth {
     /// Direct raw key authentication: the client supplies public keys plus a hybrid signature.
-    RawKeys { raw_keys: RawKeys, sig: HybridSig },
+    RawKeys { raw_keys: Box<RawKeys>, sig: Box<HybridSig> },
     /// Certificate chain based authentication (≥1 certificate) plus a hybrid signature.
-    CertChain { user_cert_chain: Vec<Vec<u8>>, sig: HybridSig },
+    CertChain { user_cert_chain: Vec<Vec<u8>>, sig: Box<HybridSig> },
 }
 
 impl<'de> Deserialize<'de> for UserAuth {
@@ -592,8 +620,8 @@ impl<'de> Deserialize<'de> for UserAuth {
                     return Err(A::Error::custom("USER_AUTH object contains both raw_keys and user_cert_chain (ambiguous)"));
                 }
                 let sig = sig.ok_or_else(|| A::Error::custom("missing sig"))?;
-                if let Some(rk) = raw_keys { return Ok(UserAuth::RawKeys { raw_keys: rk, sig }); }
-                if let Some(chain) = user_cert_chain { return Ok(UserAuth::CertChain { user_cert_chain: chain, sig }); }
+                if let Some(rk) = raw_keys { return Ok(UserAuth::RawKeys { raw_keys: Box::new(rk), sig: Box::new(sig) }); }
+                if let Some(chain) = user_cert_chain { return Ok(UserAuth::CertChain { user_cert_chain: chain, sig: Box::new(sig) }); }
                 Err(A::Error::custom("user_auth must contain either raw_keys or user_cert_chain"))
             }
         }
@@ -623,7 +651,13 @@ pub struct FinishClient {
 
 impl FinishClient {
     /// Validate semantic invariants (cert chain content when present, AEAD tag length, pad size).
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any of the following invariants are violated:
+    /// - Certificate chain is empty or contains an oversized certificate
+    /// - AEAD confirmation tag length mismatch
+    /// - Padding exceeds `PAD_MAX`
     pub fn validate(&self) -> Result<(), HandshakeError> {
         match &self.user_auth {
             UserAuth::RawKeys { raw_keys, sig } => {
@@ -645,15 +679,18 @@ impl FinishClient {
         if self.client_confirm.len() != AEAD_TAG_LEN {
             return Err(HandshakeError::LengthMismatch { field: "FINISH_CLIENT.client_confirm", expected: AEAD_TAG_LEN, actual: self.client_confirm.len() });
         }
-        if let Some(p) = &self.pad {
-            if p.len() > PAD_MAX {
-                return Err(HandshakeError::FinishClientPadTooLarge);
-            }
+        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+            return Err(HandshakeError::FinishClientPadTooLarge);
         }
+
         Ok(())
     }
 
-    /// Construct and validate a FinishClient message.
+    /// Construct and validate a `FinishClient` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if semantic validation fails (see [`FinishClient::validate`]).
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         kem_ciphertexts: KemCiphertexts,
@@ -678,7 +715,7 @@ impl FinishClient {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinishServer {
-    /// Server AEAD confirmation tag (same length semantics as client_confirm).
+    /// Server AEAD confirmation tag (same length semantics as `client_confirm`).
     /// Server AEAD confirmation tag (`AEAD_TAG_LEN` bytes) mirroring the client tag semantics.
     pub server_confirm: Vec<u8>, // AEAD tag (length validated)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -691,25 +728,31 @@ pub struct FinishServer {
 
 impl FinishServer {
     /// Validate semantic invariants (AEAD tag length, ticket non-empty, pad size).
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any of the following invariants are violated:
+    /// - AEAD confirmation tag length mismatch
+    /// - Resumption ticket is present but empty
+    /// - Padding exceeds `PAD_MAX`
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.server_confirm.len() != AEAD_TAG_LEN {
             return Err(HandshakeError::LengthMismatch { field: "FINISH_SERVER.server_confirm", expected: AEAD_TAG_LEN, actual: self.server_confirm.len() });
         }
-        if let Some(t) = &self.resumption_ticket {
-            if t.is_empty() {
-                return Err(HandshakeError::FinishServerTicketEmpty);
-            }
+        if let Some(t) = &self.resumption_ticket && t.is_empty() {
+            return Err(HandshakeError::FinishServerTicketEmpty);
         }
-        if let Some(p) = &self.pad {
-            if p.len() > PAD_MAX {
-                return Err(HandshakeError::FinishServerPadTooLarge);
-            }
+        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+            return Err(HandshakeError::FinishServerPadTooLarge);
         }
         Ok(())
     }
 
-    /// Construct and validate a FinishServer message.
+    /// Construct and validate a `FinishServer` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if semantic validation fails (see [`FinishServer::validate`]).
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         server_confirm: Vec<u8>,
