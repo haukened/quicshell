@@ -55,15 +55,6 @@ pub enum HandshakeError {
     /// Protocol version field in `HELLO` was not `1`.
     #[error("HELLO.v must be 1")]
     HelloBadVersion,
-    /// Client nonce length mismatch (should be enforced by type; legacy path).
-    #[error("HELLO.client_nonce must be {expected} bytes, got {actual}")]
-    HelloBadNonce { expected: usize, actual: usize },
-    /// X25519 ephemeral public key wrong length (will be removed after newtype rollout).
-    #[error("HELLO.kem_client_ephemeral.x25519_pub must be 32 bytes")]
-    HelloBadX25519,
-    /// ML-KEM-768 ephemeral public key wrong length (will be removed after newtype rollout).
-    #[error("HELLO.kem_client_ephemeral.mlkem_pub must be 1184 bytes (ML-KEM-768)")]
-    HelloBadMlkemPub,
     /// Capability token formatting invalid OR mandatory baseline missing.
     #[error("HELLO.capabilities must be UPPERCASE ASCII tokens (A-Z, 0-9, _) ≤16 bytes")]
     HelloBadCapsFormat,
@@ -75,15 +66,6 @@ pub enum HandshakeError {
     HelloPadTooLarge,
 
     // ACCEPT
-    /// Server nonce length mismatch (legacy, retained until full newtype adoption in all code paths).
-    #[error("ACCEPT.server_nonce must be 32 bytes")]
-    AcceptBadNonce,
-    /// Server ephemeral X25519 public key wrong length.
-    #[error("ACCEPT.kem_server_ephemeral.x25519_pub must be 32 bytes")]
-    AcceptBadX25519,
-    /// Server ephemeral ML-KEM-768 public key wrong length.
-    #[error("ACCEPT.kem_server_ephemeral.mlkem_pub must be 1184 bytes (ML-KEM-768)")]
-    AcceptBadMlkemPub,
     /// Empty server certificate chain.
     #[error("ACCEPT.host_cert_chain must contain at least one element")]
     AcceptEmptyCertChain,
@@ -101,41 +83,17 @@ pub enum HandshakeError {
     AcceptPadTooLarge,
 
     // FINISH_CLIENT
-    /// Hybrid KEM ML-KEM-768 ciphertext wrong length.
-    #[error("FINISH_CLIENT.kem_ciphertexts.mlkem_ct must be 1088 bytes (ML-KEM-768)")]
-    FinishClientBadMlkemCt,
-    /// Ed25519 public key length invalid (raw key auth path).
-    #[error("FINISH_CLIENT.ed25519_pub must be 32 bytes")]
-    FinishClientRawEd25519PubLen,
-    /// ML-DSA-44 public key length invalid (raw key auth path).
-    #[error("FINISH_CLIENT.mldsa44_pub must be 1312 bytes")]
-    FinishClientRawMldsaPubLen,
-    /// Ed25519 signature length invalid.
-    #[error("FINISH_CLIENT.sig.ed25519 must be 64 bytes")]
-    FinishClientSigEd25519Len,
-    /// ML-DSA-44 signature length invalid.
-    #[error("FINISH_CLIENT.sig.mldsa44 must be 2420 bytes")]
-    FinishClientSigMldsaLen,
     /// User certificate chain was empty.
     #[error("FINISH_CLIENT.user_cert_chain must have ≥1 cert")]
     FinishClientCertChainEmpty,
     /// A user certificate exceeded defensive size bound.
     #[error("FINISH_CLIENT.user_cert_chain element too large")]
     FinishClientCertTooLarge,
-    /// One or both hybrid signature component lengths invalid.
-    #[error("FINISH_CLIENT.hybrid signature lengths invalid")]
-    FinishClientHybridSigLens,
-    /// AEAD confirmation tag length mismatch.
-    #[error("FINISH_CLIENT.client_confirm (AEAD tag) wrong length (expected 16)")]
-    FinishClientConfirmLen,
     /// FINISH_CLIENT padding exceeded defensive size bound.
     #[error("FINISH_CLIENT.pad too large")]
     FinishClientPadTooLarge,
 
     // FINISH_SERVER
-    /// Server AEAD confirmation tag length invalid.
-    #[error("FINISH_SERVER.server_confirm (AEAD tag) must not be empty")]
-    FinishServerConfirmLen,
     /// Present resumption ticket was empty.
     #[error("FINISH_SERVER.resumption_ticket must not be empty when present")]
     FinishServerTicketEmpty,
@@ -146,6 +104,9 @@ pub enum HandshakeError {
     /// Ambiguous user auth object contained both raw keys and certificate chain.
     #[error("USER_AUTH object contains both raw_keys and user_cert_chain (ambiguous)")]
     UserAuthAmbiguous,
+    /// Generic field length mismatch (unifies prior specific length variants).
+    #[error("{field} length mismatch: expected {expected}, got {actual}")]
+    LengthMismatch { field: &'static str, expected: usize, actual: usize },
 }
 
 // ---- Helper validation functions ----
@@ -541,7 +502,7 @@ impl FinishClient {
             }
         }
         if self.client_confirm.len() != AEAD_TAG_LEN {
-            return Err(HandshakeError::FinishClientConfirmLen);
+            return Err(HandshakeError::LengthMismatch { field: "FINISH_CLIENT.client_confirm", expected: AEAD_TAG_LEN, actual: self.client_confirm.len() });
         }
         if let Some(p) = &self.pad {
             if p.len() > PAD_MAX {
@@ -570,7 +531,7 @@ pub struct FinishServer {
 impl FinishServer {
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.server_confirm.len() != AEAD_TAG_LEN {
-            return Err(HandshakeError::FinishServerConfirmLen);
+            return Err(HandshakeError::LengthMismatch { field: "FINISH_SERVER.server_confirm", expected: AEAD_TAG_LEN, actual: self.server_confirm.len() });
         }
         if let Some(t) = &self.resumption_ticket {
             if t.is_empty() {
