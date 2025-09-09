@@ -16,12 +16,12 @@
 //! * Baseline capabilities `EXEC` and `TTY` are mandatory and validated.
 //! * AEAD confirmation tags (`client_confirm`, `server_confirm`) are fixed to `AEAD_TAG_LEN` (=16) bytes.
 //! * No private / secret key material is represented here; zeroization is not required.
-//! * `UserAuth` is currently an untagged enum and will gain a custom deserializer to reject
-//!   ambiguous inputs (see backlog Phase 5).
+//! * `UserAuth` uses a custom deserializer to reject ambiguous inputs containing both
+//!   `raw_keys` and `user_cert_chain` (emits `HandshakeError::UserAuthAmbiguous`).
 //!
 //! Future (backlog):
 //! * Generic length error consolidation.
-//! * Capability newtype and manual `UserAuth` deserialization.
+//! * (Done) Capability newtype and manual `UserAuth` deserialization.
 //! * Additional ergonomic constructors and examples.
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -448,22 +448,59 @@ pub struct RawKeys {
     pub mldsa44_pub: Mldsa44Pub,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum UserAuth {
-    // { raw_keys: {ed25519_pub, mldsa44_pub}, sig: {ed25519, mldsa44} }
-    #[serde(rename_all = "snake_case")]
     /// Direct raw key authentication: the client supplies public keys plus a hybrid signature.
     RawKeys { raw_keys: RawKeys, sig: HybridSig },
-    // { user_cert_chain: [bstr,...], sig: {ed25519, mldsa44} }
-    #[serde(rename_all = "snake_case")]
     /// Certificate chain based authentication (≥1 certificate) plus a hybrid signature.
-    CertChain {
-        /// Ordered chain (leaf first). Each element length bounded defensively.
-        user_cert_chain: Vec<Vec<u8>>,
-        /// Hybrid signature over transcript using keys in leaf cert.
-        sig: HybridSig,
-    },
+    CertChain { user_cert_chain: Vec<Vec<u8>>, sig: HybridSig },
+}
+
+impl<'de> Deserialize<'de> for UserAuth {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::{Error as DeError, MapAccess, Visitor};
+        use core::marker::PhantomData;
+
+        struct UAuthVisitor(PhantomData<()>);
+        impl<'de> Visitor<'de> for UAuthVisitor {
+            type Value = UserAuth;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "user_auth object") }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut raw_keys: Option<RawKeys> = None;
+                let mut user_cert_chain: Option<Vec<Vec<u8>>> = None;
+                let mut sig: Option<HybridSig> = None;
+                while let Some(key) = map.next_key::<&str>()? {
+                    match key {
+                        "raw_keys" => {
+                            if raw_keys.is_some() { return Err(A::Error::custom("duplicate raw_keys")); }
+                            let inner: RawKeys = map.next_value()?;
+                            raw_keys = Some(inner);
+                        }
+                        "user_cert_chain" => {
+                            if user_cert_chain.is_some() { return Err(A::Error::custom("duplicate user_cert_chain")); }
+                            let chain: Vec<Vec<u8>> = map.next_value()?;
+                            user_cert_chain = Some(chain);
+                        }
+                        "sig" => {
+                            if sig.is_some() { return Err(A::Error::custom("duplicate sig")); }
+                            sig = Some(map.next_value()?);
+                        }
+                        // Ignore unknown keys for forward compatibility
+                        _ => { let _ignored: serde::de::IgnoredAny = map.next_value()?; }
+                    }
+                }
+                if raw_keys.is_some() && user_cert_chain.is_some() {
+                    return Err(A::Error::custom("USER_AUTH object contains both raw_keys and user_cert_chain (ambiguous)"));
+                }
+                let sig = sig.ok_or_else(|| A::Error::custom("missing sig"))?;
+                if let Some(rk) = raw_keys { return Ok(UserAuth::RawKeys { raw_keys: rk, sig }); }
+                if let Some(chain) = user_cert_chain { return Ok(UserAuth::CertChain { user_cert_chain: chain, sig }); }
+                Err(A::Error::custom("user_auth must contain either raw_keys or user_cert_chain"))
+            }
+        }
+        d.deserialize_map(UAuthVisitor(PhantomData))
+    }
 }
 
 /// Client `FINISH_CLIENT` handshake message (spec §5.1).
