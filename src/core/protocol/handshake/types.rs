@@ -86,29 +86,41 @@ macro_rules! impl_large_array_newtype_serde {
                 struct V<const N: usize>;
                 impl<'de, const N: usize> serde::de::Visitor<'de> for V<N> {
                     type Value = [u8; N];
-                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "byte string of length {}", N) }
+                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                        write!(f, "byte string of length {}", N)
+                    }
                     fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
-                        if v.len() != N { return Err(E::invalid_length(v.len(), &self)); }
+                        if v.len() != N {
+                            return Err(E::invalid_length(v.len(), &self));
+                        }
                         let mut a = [0u8; N];
                         a.copy_from_slice(v);
                         Ok(a)
                     }
-                    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                        self,
+                        mut seq: A,
+                    ) -> Result<Self::Value, A::Error> {
                         let mut a = [0u8; N];
                         let mut i = 0;
                         while let Some(byte) = seq.next_element::<u8>()? {
-                            if i >= N { return Err(serde::de::Error::invalid_length(i, &self)); }
-                            a[i] = byte; i += 1;
+                            if i >= N {
+                                return Err(serde::de::Error::invalid_length(i, &self));
+                            }
+                            a[i] = byte;
+                            i += 1;
                         }
-                        if i != N { return Err(serde::de::Error::invalid_length(i, &self)); }
+                        if i != N {
+                            return Err(serde::de::Error::invalid_length(i, &self));
+                        }
                         Ok(a)
                     }
                 }
-                let arr = d.deserialize_bytes(V::<{$len_const}> )?;
+                let arr = d.deserialize_bytes(V::<{ $len_const }>)?;
                 Ok($name(arr))
             }
         }
-    }
+    };
 }
 
 /// ---- Domain error type (idiomatic, typed) ----
@@ -172,7 +184,11 @@ pub enum HandshakeError {
     UserAuthAmbiguous,
     /// Generic field length mismatch (unifies prior specific length variants).
     #[error("{field} length mismatch: expected {expected}, got {actual}")]
-    LengthMismatch { field: &'static str, expected: usize, actual: usize },
+    LengthMismatch {
+        field: &'static str,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 // ---- Helper validation functions ----
@@ -202,7 +218,9 @@ pub struct Capability(String);
 impl Capability {
     /// Access the inner string slice.
     #[must_use]
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
     /// Parse and validate a capability token from a `&str`.
     ///
     /// # Errors
@@ -211,20 +229,34 @@ impl Capability {
     /// - Not ASCII uppercase (A-Z, 0-9, or `_`).
     /// - Length is zero or exceeds `CAP_TOKEN_MAX`.
     pub fn parse(s: &str) -> Result<Self, &'static str> {
-        if is_ascii_upper_token(s) { Ok(Capability(s.to_string())) } else { Err("invalid capability token") }
+        if is_ascii_upper_token(s) {
+            Ok(Capability(s.to_string()))
+        } else {
+            Err("invalid capability token")
+        }
     }
 }
 impl fmt::Debug for Capability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Capability({})", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Capability({})", self.0)
+    }
 }
-impl From<Capability> for String { fn from(c: Capability) -> Self { c.0 } }
+impl From<Capability> for String {
+    fn from(c: Capability) -> Self {
+        c.0
+    }
+}
 impl Serialize for Capability {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> { s.serialize_str(&self.0) }
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
 }
 impl<'de> Deserialize<'de> for Capability {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = <&str>::deserialize(d)?;
-        if !is_ascii_upper_token(s) { return Err(serde::de::Error::custom("invalid capability token")); }
+        if !is_ascii_upper_token(s) {
+            return Err(serde::de::Error::custom("invalid capability token"));
+        }
         Ok(Capability(s.to_string()))
     }
 }
@@ -235,7 +267,6 @@ impl<'de> Deserialize<'de> for Capability {
 // HELLO (client→server) → ACCEPT (server→client) → FINISH_CLIENT (client→server) → FINISH_SERVER (server→client).
 // The FINISH_* pair completes the **handshake** (mutual auth + key confirmation). The **session** starts *after* FINISH_SERVER is verified.
 // Channels and rekeys operate within the established session; they do **not** re‑authenticate the user.
-
 
 /// 32-byte nonce used in `HELLO.client_nonce` and `ACCEPT.server_nonce`.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -259,7 +290,11 @@ impl Nonce32 {
     /// Returns `Err` if the input slice length does not match `NONCE_LEN`.
     pub fn from_bytes(b: &[u8]) -> Result<Self, HandshakeError> {
         if b.len() != NONCE_LEN {
-            return Err(HandshakeError::LengthMismatch { field: "Nonce32", expected: NONCE_LEN, actual: b.len() });
+            return Err(HandshakeError::LengthMismatch {
+                field: "Nonce32",
+                expected: NONCE_LEN,
+                actual: b.len(),
+            });
         }
         let mut arr = [0u8; NONCE_LEN];
         arr.copy_from_slice(b);
@@ -429,19 +464,19 @@ impl Hello {
         }
         // Baseline capabilities must be present
         if !(self.capabilities.iter().any(|c| c.as_str() == "EXEC")
-            && self.capabilities.iter().any(|c| c.as_str() == "TTY")) {
+            && self.capabilities.iter().any(|c| c.as_str() == "TTY"))
+        {
             return Err(HandshakeError::HelloBadCapsFormat); // reuse variant per decision
         }
         // Enforce count + strict lexicographic increasing (no duplicates)
         if self.capabilities.len() > CAP_COUNT_MAX
-            || self
-                .capabilities
-                .windows(2)
-                .any(|w| w[0] >= w[1])
+            || self.capabilities.windows(2).any(|w| w[0] >= w[1])
         {
             return Err(HandshakeError::HelloBadCapsOrder);
         }
-        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+        if let Some(p) = &self.pad
+            && p.len() > PAD_MAX
+        {
             return Err(HandshakeError::HelloPadTooLarge);
         }
         Ok(())
@@ -526,7 +561,9 @@ impl Accept {
                 return Err(HandshakeError::AcceptTicketMaxUsesInvalid);
             }
         }
-        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+        if let Some(p) = &self.pad
+            && p.len() > PAD_MAX
+        {
             return Err(HandshakeError::AcceptPadTooLarge);
         }
         Ok(())
@@ -577,20 +614,28 @@ pub struct RawKeys {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum UserAuth {
     /// Direct raw key authentication: the client supplies public keys plus a hybrid signature.
-    RawKeys { raw_keys: Box<RawKeys>, sig: Box<HybridSig> },
+    RawKeys {
+        raw_keys: Box<RawKeys>,
+        sig: Box<HybridSig>,
+    },
     /// Certificate chain based authentication (≥1 certificate) plus a hybrid signature.
-    CertChain { user_cert_chain: Vec<Vec<u8>>, sig: Box<HybridSig> },
+    CertChain {
+        user_cert_chain: Vec<Vec<u8>>,
+        sig: Box<HybridSig>,
+    },
 }
 
 impl<'de> Deserialize<'de> for UserAuth {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        use serde::de::{Error as DeError, MapAccess, Visitor};
         use core::marker::PhantomData;
+        use serde::de::{Error as DeError, MapAccess, Visitor};
 
         struct UAuthVisitor(PhantomData<()>);
         impl<'de> Visitor<'de> for UAuthVisitor {
             type Value = UserAuth;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "user_auth object") }
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "user_auth object")
+            }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut raw_keys: Option<RawKeys> = None;
@@ -599,30 +644,52 @@ impl<'de> Deserialize<'de> for UserAuth {
                 while let Some(key) = map.next_key::<&str>()? {
                     match key {
                         "raw_keys" => {
-                            if raw_keys.is_some() { return Err(A::Error::custom("duplicate raw_keys")); }
+                            if raw_keys.is_some() {
+                                return Err(A::Error::custom("duplicate raw_keys"));
+                            }
                             let inner: RawKeys = map.next_value()?;
                             raw_keys = Some(inner);
                         }
                         "user_cert_chain" => {
-                            if user_cert_chain.is_some() { return Err(A::Error::custom("duplicate user_cert_chain")); }
+                            if user_cert_chain.is_some() {
+                                return Err(A::Error::custom("duplicate user_cert_chain"));
+                            }
                             let chain: Vec<Vec<u8>> = map.next_value()?;
                             user_cert_chain = Some(chain);
                         }
                         "sig" => {
-                            if sig.is_some() { return Err(A::Error::custom("duplicate sig")); }
+                            if sig.is_some() {
+                                return Err(A::Error::custom("duplicate sig"));
+                            }
                             sig = Some(map.next_value()?);
                         }
                         // Ignore unknown keys for forward compatibility
-                        _ => { let _ignored: serde::de::IgnoredAny = map.next_value()?; }
+                        _ => {
+                            let _ignored: serde::de::IgnoredAny = map.next_value()?;
+                        }
                     }
                 }
                 if raw_keys.is_some() && user_cert_chain.is_some() {
-                    return Err(A::Error::custom("USER_AUTH object contains both raw_keys and user_cert_chain (ambiguous)"));
+                    return Err(A::Error::custom(
+                        "USER_AUTH object contains both raw_keys and user_cert_chain (ambiguous)",
+                    ));
                 }
                 let sig = sig.ok_or_else(|| A::Error::custom("missing sig"))?;
-                if let Some(rk) = raw_keys { return Ok(UserAuth::RawKeys { raw_keys: Box::new(rk), sig: Box::new(sig) }); }
-                if let Some(chain) = user_cert_chain { return Ok(UserAuth::CertChain { user_cert_chain: chain, sig: Box::new(sig) }); }
-                Err(A::Error::custom("user_auth must contain either raw_keys or user_cert_chain"))
+                if let Some(rk) = raw_keys {
+                    return Ok(UserAuth::RawKeys {
+                        raw_keys: Box::new(rk),
+                        sig: Box::new(sig),
+                    });
+                }
+                if let Some(chain) = user_cert_chain {
+                    return Ok(UserAuth::CertChain {
+                        user_cert_chain: chain,
+                        sig: Box::new(sig),
+                    });
+                }
+                Err(A::Error::custom(
+                    "user_auth must contain either raw_keys or user_cert_chain",
+                ))
             }
         }
         d.deserialize_map(UAuthVisitor(PhantomData))
@@ -677,9 +744,15 @@ impl FinishClient {
             }
         }
         if self.client_confirm.len() != AEAD_TAG_LEN {
-            return Err(HandshakeError::LengthMismatch { field: "FINISH_CLIENT.client_confirm", expected: AEAD_TAG_LEN, actual: self.client_confirm.len() });
+            return Err(HandshakeError::LengthMismatch {
+                field: "FINISH_CLIENT.client_confirm",
+                expected: AEAD_TAG_LEN,
+                actual: self.client_confirm.len(),
+            });
         }
-        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+        if let Some(p) = &self.pad
+            && p.len() > PAD_MAX
+        {
             return Err(HandshakeError::FinishClientPadTooLarge);
         }
 
@@ -737,12 +810,20 @@ impl FinishServer {
     /// - Padding exceeds `PAD_MAX`
     pub fn validate(&self) -> Result<(), HandshakeError> {
         if self.server_confirm.len() != AEAD_TAG_LEN {
-            return Err(HandshakeError::LengthMismatch { field: "FINISH_SERVER.server_confirm", expected: AEAD_TAG_LEN, actual: self.server_confirm.len() });
+            return Err(HandshakeError::LengthMismatch {
+                field: "FINISH_SERVER.server_confirm",
+                expected: AEAD_TAG_LEN,
+                actual: self.server_confirm.len(),
+            });
         }
-        if let Some(t) = &self.resumption_ticket && t.is_empty() {
+        if let Some(t) = &self.resumption_ticket
+            && t.is_empty()
+        {
             return Err(HandshakeError::FinishServerTicketEmpty);
         }
-        if let Some(p) = &self.pad && p.len() > PAD_MAX {
+        if let Some(p) = &self.pad
+            && p.len() > PAD_MAX
+        {
             return Err(HandshakeError::FinishServerPadTooLarge);
         }
         Ok(())
