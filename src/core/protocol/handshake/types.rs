@@ -158,6 +158,38 @@ fn is_ascii_upper_token(s: &str) -> bool {
             .all(|b| matches!(b, b'A'..=b'Z' | b'0'..=b'9' | b'_'))
 }
 
+/// Capability token (validated UPPERCASE ASCII, length 1..=CAP_TOKEN_MAX).
+///
+/// Why a newtype over `String` (not an enum): the capability space is intentionally
+/// open/extensible; peers must forward & accept unknown advisory tokens without a
+/// code / deploy cycle. A closed enum would either:
+/// * reject future tokens (version skew) OR
+/// * require an `Unknown(String)` variant that callers then still have to treat like a free string.
+///
+/// This newtype centralizes validation while preserving forward compatibility. If the
+/// set ever freezes, an enum can replace it in a breaking revision. Ordering derives `Ord`
+/// so a `Vec<Capability>` can be validated for strict lexicographic ordering (no duplicates)
+/// with a simple window check.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Capability(String);
+impl Capability {
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+impl fmt::Debug for Capability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Capability({})", self.0) }
+}
+impl From<Capability> for String { fn from(c: Capability) -> Self { c.0 } }
+impl Serialize for Capability {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> { s.serialize_str(&self.0) }
+}
+impl<'de> Deserialize<'de> for Capability {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = <&str>::deserialize(d)?;
+        if !is_ascii_upper_token(s) { return Err(serde::de::Error::custom("invalid capability token")); }
+        Ok(Capability(s.to_string()))
+    }
+}
+
 /// Checks if a vector of strings is lexicographically ordered without duplicates and within count limit.
 fn is_lexicographic_no_dups(v: &[String]) -> bool {
     if v.len() > CAP_COUNT_MAX {
@@ -312,8 +344,8 @@ pub struct Hello {
     pub kem_client_ephemeral: KemClientEphemeral,
     /// Randomly generated client nonce (length == 32)
     pub client_nonce: Nonce32,
-    /// Advisory capability tokens (ASCII UPPERCASE, lexicographic)
-    pub capabilities: Vec<String>,
+    /// Advisory capability tokens (validated, must include baseline EXEC & TTY, strictly increasing)
+    pub capabilities: Vec<Capability>,
     /// Optional padding (excluded from transcript hash)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pad: Option<Vec<u8>>,
@@ -324,18 +356,18 @@ impl Hello {
         if self.v != 1 {
             return Err(HandshakeError::HelloBadVersion);
         }
-        // Must contain baseline EXEC and TTY capabilities; enforce format and presence
-        if self.capabilities.is_empty()
-            || !self.capabilities.iter().all(|c| is_ascii_upper_token(c))
-        {
-            return Err(HandshakeError::HelloBadCapsFormat);
+        // Baseline capabilities must be present
+        if !(self.capabilities.iter().any(|c| c.as_str() == "EXEC")
+            && self.capabilities.iter().any(|c| c.as_str() == "TTY")) {
+            return Err(HandshakeError::HelloBadCapsFormat); // reuse variant per decision
         }
-        if !(self.capabilities.iter().any(|c| c == "EXEC")
-            && self.capabilities.iter().any(|c| c == "TTY"))
+        // Enforce count + strict lexicographic increasing (no duplicates)
+        if self.capabilities.len() > CAP_COUNT_MAX
+            || self
+                .capabilities
+                .windows(2)
+                .any(|w| !(w[0] < w[1]))
         {
-            return Err(HandshakeError::HelloBadCapsFormat);
-        }
-        if !is_lexicographic_no_dups(&self.capabilities) {
             return Err(HandshakeError::HelloBadCapsOrder);
         }
         if let Some(p) = &self.pad {
