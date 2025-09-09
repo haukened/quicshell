@@ -242,8 +242,19 @@ impl fmt::Debug for Nonce32 {
     }
 }
 impl Nonce32 {
+    /// Access the inner byte array.
     pub fn as_bytes(&self) -> &[u8; NONCE_LEN] {
         &self.0
+    }
+
+    /// Create a Nonce32 from a byte slice, validating length.
+    pub fn from_bytes(b: &[u8]) -> Result<Self, HandshakeError> {
+        if b.len() != NONCE_LEN {
+            return Err(HandshakeError::LengthMismatch { field: "Nonce32", expected: NONCE_LEN, actual: b.len() });
+        }
+        let mut arr = [0u8; NONCE_LEN];
+        arr.copy_from_slice(b);
+        Ok(Nonce32(arr))
     }
 }
 
