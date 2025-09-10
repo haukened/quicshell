@@ -1,4 +1,4 @@
-use quicshell::core::protocol::handshake::types::*;
+use quicshell::domain::handshake::*;
 use serde_cbor::{from_slice, to_vec};
 use serde::Serialize;
 

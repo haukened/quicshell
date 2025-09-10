@@ -1,2 +1,1 @@
-//! core
-pub mod protocol;
+pub mod codec;
