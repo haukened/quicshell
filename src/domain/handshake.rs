@@ -859,6 +859,7 @@ mod tests {
     use super::*;
     use serde::Serialize;
     use std::io::Cursor;
+    use crate::test_support::{mk_cap, mk_keys, mk_kem, mk_nonce};
 
     // Test-local CBOR helpers using ciborium (serde-compatible, deterministic)
     fn to_vec<T: Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
@@ -869,26 +870,7 @@ mod tests {
     fn from_slice<T: for<'de> serde::Deserialize<'de>>(b: &[u8]) -> Result<T, ciborium::de::Error<std::io::Error>> {
         ciborium::de::from_reader(Cursor::new(b))
     }
-    // ---- Shared helpers ----
     fn bytes_of(n: u8, len: usize) -> Vec<u8> { vec![n; len] }
-    fn mk_cap(s: &str) -> Capability { Capability::parse(s).unwrap() }
-    fn mk_keys() -> (RawKeys, HybridSig) {
-        (
-            RawKeys { ed25519_pub: Ed25519Pub([0; ED25519_PK_LEN]), mldsa44_pub: Mldsa44Pub([0; MLDSA44_PK_LEN]) },
-            HybridSig { ed25519: Ed25519Sig([0; ED25519_SIG_LEN]), mldsa44: Mldsa44Sig([0; MLDSA44_SIG_LEN]) },
-        )
-    }
-    fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
-        let x = X25519Pub([0; X25519_PK_LEN]);
-        let m = Mlkem768Pub([0; MLKEM768_PK_LEN]);
-        let ct = Mlkem768Ciphertext([0; MLKEM768_CT_LEN]);
-        (
-            KemClientEphemeral { x25519_pub: x.clone(), mlkem_pub: m.clone() },
-            KemServerEphemeral { x25519_pub: x, mlkem_pub: m },
-            KemCiphertexts { mlkem_ct: ct },
-        )
-    }
-    fn mk_nonce() -> Nonce32 { Nonce32([0; NONCE_LEN]) }
 
     // ---- Capability tests ----
     mod capability {
@@ -1037,29 +1019,29 @@ mod tests {
         #[test]
         fn cert_chain_error_cases() {
             let (_, _, kem_ct) = super::mk_kem(); let (_, sig) = super::mk_keys(); let confirm = super::bytes_of(0, AEAD_TAG_LEN);
-            let ua_empty = UserAuth::CertChain { user_cert_chain: vec![], sig: Box::new(sig.clone()) }; // empty
+            let ua_empty = UserAuth::CertChain { user_cert_chain: vec![], sig: sig.clone() }; // empty
             assert!(matches!(FinishClient::new(kem_ct.clone(), ua_empty, confirm.clone(), None), Err(HandshakeError::FinishClientCertChainEmpty)));
-            let ua_big = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(0, CERT_MAX + 1)], sig: Box::new(sig) };
+            let ua_big = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(0, CERT_MAX + 1)], sig: sig };
             assert!(matches!(FinishClient::new(kem_ct, ua_big, confirm, None), Err(HandshakeError::FinishClientCertTooLarge)));
         }
         #[test]
         fn aead_tag_length_checks() {
             let (_, _, kem_ct) = super::mk_kem(); let (raw_keys, sig) = super::mk_keys();
-            let ua = UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) };
+            let ua = UserAuth::RawKeys { raw_keys: raw_keys, sig: sig };
             assert!(matches!(FinishClient::new(kem_ct.clone(), ua.clone(), super::bytes_of(0, AEAD_TAG_LEN - 1), None), Err(HandshakeError::LengthMismatch { .. })));
             assert!(FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), None).is_ok());
         }
         #[test]
         fn pad_over_max_errors() {
             let (_, _, kem_ct) = super::mk_kem(); let (raw_keys, sig) = super::mk_keys();
-            let ua = UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) };
+            let ua = UserAuth::RawKeys { raw_keys: raw_keys, sig: sig };
             let pad = Some(super::bytes_of(0, PAD_MAX + 1));
             assert!(matches!(FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), pad), Err(HandshakeError::FinishClientPadTooLarge)));
         }
         #[test]
         fn cert_chain_success_with_pad_boundary() {
             let (_, _, kem_ct) = super::mk_kem(); let (_, sig) = super::mk_keys();
-            let ua = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(3,10)], sig: Box::new(sig) };
+            let ua = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(3,10)], sig: sig };
             let fc = FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), Some(super::bytes_of(9, PAD_MAX))).unwrap();
             assert_eq!(fc.client_confirm.len(), AEAD_TAG_LEN); assert_eq!(fc.pad.unwrap().len(), PAD_MAX);
         }
@@ -1138,7 +1120,7 @@ mod tests {
             let accept = Accept::new(kem_s, vec![super::bytes_of(0,1)], super::mk_nonce(), None, None, None).unwrap();
             let buf = to_vec(&AcceptExtra { base: accept, xtra: 1 }).unwrap(); assert!(from_slice::<Accept>(&buf).is_err());
             let (raw_keys, sig) = super::mk_keys();
-            let fc = FinishClient::new(kem_ct, UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) }, super::bytes_of(0, AEAD_TAG_LEN), None).unwrap();
+            let fc = FinishClient::new(kem_ct, UserAuth::RawKeys { raw_keys: raw_keys, sig: sig }, super::bytes_of(0, AEAD_TAG_LEN), None).unwrap();
             let buf = to_vec(&FinishClientExtra { base: fc, xtra: 1 }).unwrap(); assert!(from_slice::<FinishClient>(&buf).is_err());
             let fs = FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), None, None).unwrap();
             let buf = to_vec(&FinishServerExtra { base: fs, xtra: 1 }).unwrap(); assert!(from_slice::<FinishServer>(&buf).is_err());
