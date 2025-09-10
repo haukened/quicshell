@@ -4,3 +4,4 @@ pub mod application;
 pub mod ports;
 pub mod adapters;
 pub mod protocol;
+mod test_support;
