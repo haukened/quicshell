@@ -2,7 +2,17 @@
 // unit tests live with the types they test
 
 use quicshell::domain::handshake::*;
-use serde_cbor::{from_slice, to_vec};
+use std::io::Cursor;
+
+// Test-local CBOR helpers using ciborium (deterministic by default)
+fn to_vec<T: serde::Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(v, &mut buf)?;
+    Ok(buf)
+}
+fn from_slice<T: for<'de> serde::Deserialize<'de>>(b: &[u8]) -> Result<T, ciborium::de::Error<std::io::Error>> {
+    ciborium::de::from_reader(Cursor::new(b))
+}
 use serde::Serialize;
 
 fn bytes_of(n: u8, len: usize) -> Vec<u8> {

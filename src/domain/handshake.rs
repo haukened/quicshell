@@ -253,11 +253,14 @@ impl Serialize for Capability {
 }
 impl<'de> Deserialize<'de> for Capability {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = <&str>::deserialize(d)?;
-        if !is_ascii_upper_token(s) {
+        use std::borrow::Cow;
+        // Accept either a borrowed or owned string from the deserializer.
+        let s: Cow<'de, str> = Cow::deserialize(d)?;
+        let s_ref = s.as_ref();
+        if !is_ascii_upper_token(s_ref) {
             return Err(serde::de::Error::custom("invalid capability token"));
         }
-        Ok(Capability(s.to_string()))
+        Ok(Capability(s.into_owned()))
     }
 }
 
@@ -638,11 +641,12 @@ impl<'de> Deserialize<'de> for UserAuth {
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                use std::borrow::Cow;
                 let mut raw_keys: Option<RawKeys> = None;
                 let mut user_cert_chain: Option<Vec<Vec<u8>>> = None;
                 let mut sig: Option<HybridSig> = None;
-                while let Some(key) = map.next_key::<&str>()? {
-                    match key {
+                while let Some(key) = map.next_key::<Cow<'de, str>>()? {
+                    match key.as_ref() {
                         "raw_keys" => {
                             if raw_keys.is_some() {
                                 return Err(A::Error::custom("duplicate raw_keys"));
@@ -902,15 +906,26 @@ mod tests {
         #[test]
         fn into_string_and_debug() { let c = super::mk_cap("EXEC"); let s: String = c.clone().into(); assert_eq!(s, "EXEC"); assert!(format!("{:?}", c).contains("Capability(EXEC)")); }
         #[test]
-        fn serialize_round_trip_preserves_order() {
-            let caps = vec![super::mk_cap("EXEC"), super::mk_cap("FOO1"), super::mk_cap("TTY")];
+        fn serialize_round_trip_caps_are_sorted_unique() {
+            // Protocol requires caps to be lexicographically increasing (no dups).
+            // We construct a sorted list, round-trip, and assert the invariant holds.
+            let mut caps = vec![super::mk_cap("TTY"), super::mk_cap("EXEC"), super::mk_cap("FOO1")];
+            caps.sort(); // enforce lexicographic increasing before construction
+
             let (kem_c, _, _) = super::mk_kem();
             let hello = Hello::new(kem_c, super::mk_nonce(), caps.clone(), None).unwrap();
             let buf = to_vec(&hello).unwrap();
             let de: Hello = from_slice(&buf).unwrap();
-            let got: Vec<String> = de.capabilities.into_iter().map(|c| c.as_str().to_string()).collect();
-            let want: Vec<String> = caps.into_iter().map(|c| c.as_str().to_string()).collect();
+
+            // Extract strings for comparison
+            let got: Vec<String> = de.capabilities.iter().map(|c| c.as_str().to_string()).collect();
+            let mut want: Vec<String> = caps.into_iter().map(|c| c.as_str().to_string()).collect();
+            want.sort();
+            want.dedup();
+
+            // Round-trip must keep the sorted, strictly-increasing order.
             assert_eq!(got, want);
+            assert!(de.capabilities.windows(2).all(|w| w[0] < w[1]));
         }
     }
 
