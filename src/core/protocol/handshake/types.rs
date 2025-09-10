@@ -808,7 +808,7 @@ impl FinishServer {
     /// - AEAD confirmation tag length mismatch
     /// - Resumption ticket is present but empty
     /// - Padding exceeds `PAD_MAX`
-    pub fn validate(&self) -> Result<(), HandshakeError> {
+    pub fn validate(& self) -> Result<(), HandshakeError> {
         if self.server_confirm.len() != AEAD_TAG_LEN {
             return Err(HandshakeError::LengthMismatch {
                 field: "FINISH_SERVER.server_confirm",
@@ -855,435 +855,288 @@ mod tests {
     use super::*;
     use serde::Serialize;
     use serde_cbor::{from_slice, to_vec};
-
-    fn bytes_of(n: u8, len: usize) -> Vec<u8> {
-        vec![n; len]
-    }
-
-    fn mk_cap(s: &str) -> Capability {
-        Capability::parse(s).unwrap()
-    }
-
+    // ---- Shared helpers ----
+    fn bytes_of(n: u8, len: usize) -> Vec<u8> { vec![n; len] }
+    fn mk_cap(s: &str) -> Capability { Capability::parse(s).unwrap() }
     fn mk_keys() -> (RawKeys, HybridSig) {
         (
-            RawKeys {
-                ed25519_pub: Ed25519Pub([0; ED25519_PK_LEN]),
-                mldsa44_pub: Mldsa44Pub([0; MLDSA44_PK_LEN]),
-            },
-            HybridSig {
-                ed25519: Ed25519Sig([0; ED25519_SIG_LEN]),
-                mldsa44: Mldsa44Sig([0; MLDSA44_SIG_LEN]),
-            },
+            RawKeys { ed25519_pub: Ed25519Pub([0; ED25519_PK_LEN]), mldsa44_pub: Mldsa44Pub([0; MLDSA44_PK_LEN]) },
+            HybridSig { ed25519: Ed25519Sig([0; ED25519_SIG_LEN]), mldsa44: Mldsa44Sig([0; MLDSA44_SIG_LEN]) },
         )
     }
-
     fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
         let x = X25519Pub([0; X25519_PK_LEN]);
         let m = Mlkem768Pub([0; MLKEM768_PK_LEN]);
         let ct = Mlkem768Ciphertext([0; MLKEM768_CT_LEN]);
         (
-            KemClientEphemeral {
-                x25519_pub: x.clone(),
-                mlkem_pub: m.clone(),
-            },
-            KemServerEphemeral {
-                x25519_pub: x,
-                mlkem_pub: m,
-            },
+            KemClientEphemeral { x25519_pub: x.clone(), mlkem_pub: m.clone() },
+            KemServerEphemeral { x25519_pub: x, mlkem_pub: m },
             KemCiphertexts { mlkem_ct: ct },
         )
     }
+    fn mk_nonce() -> Nonce32 { Nonce32([0; NONCE_LEN]) }
 
-    fn mk_nonce() -> Nonce32 {
-        Nonce32([0; NONCE_LEN])
-    }
-
-    #[test]
-    fn capability_parse_accepts_valid_tokens() {
-        for tok in ["EXEC", "TTY", "A_B", "FOO1"] {
-            assert!(Capability::parse(tok).is_ok(), "token {}", tok);
+    // ---- Capability tests ----
+    mod capability {
+        use super::*;
+        #[test]
+        fn parse_accepts_valid_tokens() {
+            for tok in ["EXEC", "TTY", "A_B", "FOO1"] { assert!(Capability::parse(tok).is_ok(), "token {}", tok); }
+            let long = "X".repeat(CAP_TOKEN_MAX); assert!(Capability::parse(&long).is_ok());
         }
-        let long = "X".repeat(CAP_TOKEN_MAX);
-        assert!(Capability::parse(&long).is_ok());
-    }
-
-    #[test]
-    fn capability_parse_rejects_invalid_tokens() {
-        for tok in ["exec", "A-B", "", "FOO!"] {
-            assert!(Capability::parse(tok).is_err(), "token {}", tok);
+        #[test]
+        fn parse_rejects_invalid_tokens() {
+            for tok in ["exec", "A-B", "", "FOO!"] { assert!(Capability::parse(tok).is_err(), "token {}", tok); }
+            let long = "X".repeat(CAP_TOKEN_MAX + 1); assert!(Capability::parse(&long).is_err());
         }
-        let long = "X".repeat(CAP_TOKEN_MAX + 1);
-        assert!(Capability::parse(&long).is_err());
-    }
-
-    #[test]
-    fn hello_requires_version_1() {
-        let (kem_c, _, _) = mk_kem();
-        let h = Hello {
-            v: 2,
-            kem_client_ephemeral: kem_c,
-            client_nonce: mk_nonce(),
-            capabilities: vec![mk_cap("EXEC"), mk_cap("TTY")],
-            pad: None,
-        };
-        assert!(matches!(h.validate(), Err(HandshakeError::HelloBadVersion)));
-    }
-
-    #[test]
-    fn hello_requires_baseline_caps() {
-        let (kem_c, _, _) = mk_kem();
-        let nonce = mk_nonce();
-        assert!(matches!(
-            Hello::new(kem_c.clone(), nonce.clone(), vec![mk_cap("EXEC")], None),
-            Err(HandshakeError::HelloBadCapsFormat)
-        ));
-        assert!(matches!(
-            Hello::new(kem_c, nonce, vec![mk_cap("TTY")], None),
-            Err(HandshakeError::HelloBadCapsFormat)
-        ));
-    }
-
-    #[test]
-    fn hello_caps_must_be_sorted_and_unique() {
-        let (kem_c, _, _) = mk_kem();
-        let nonce = mk_nonce();
-        let caps = vec![mk_cap("TTY"), mk_cap("EXEC")];
-        assert!(matches!(
-            Hello::new(kem_c.clone(), nonce.clone(), caps, None),
-            Err(HandshakeError::HelloBadCapsOrder)
-        ));
-        let caps = vec![mk_cap("EXEC"), mk_cap("EXEC"), mk_cap("TTY")];
-        assert!(matches!(
-            Hello::new(kem_c.clone(), nonce.clone(), caps, None),
-            Err(HandshakeError::HelloBadCapsOrder)
-        ));
-        let mut caps = vec![mk_cap("EXEC"), mk_cap("TTY")];
-        for i in 0..CAP_COUNT_MAX - 1 {
-            caps.push(mk_cap(&format!("Z{:02}", i)));
+        #[test]
+        fn into_string_and_debug() { let c = super::mk_cap("EXEC"); let s: String = c.clone().into(); assert_eq!(s, "EXEC"); assert!(format!("{:?}", c).contains("Capability(EXEC)")); }
+        #[test]
+        fn serialize_round_trip_preserves_order() {
+            let caps = vec![super::mk_cap("EXEC"), super::mk_cap("FOO1"), super::mk_cap("TTY")];
+            let (kem_c, _, _) = super::mk_kem();
+            let hello = Hello::new(kem_c, super::mk_nonce(), caps.clone(), None).unwrap();
+            let buf = to_vec(&hello).unwrap();
+            let de: Hello = from_slice(&buf).unwrap();
+            let got: Vec<String> = de.capabilities.into_iter().map(|c| c.as_str().to_string()).collect();
+            let want: Vec<String> = caps.into_iter().map(|c| c.as_str().to_string()).collect();
+            assert_eq!(got, want);
         }
-        caps.sort();
-        assert_eq!(caps.len(), CAP_COUNT_MAX + 1);
-        assert!(matches!(
-            Hello::new(kem_c, nonce, caps, None),
-            Err(HandshakeError::HelloBadCapsOrder)
-        ));
     }
 
-    #[test]
-    fn hello_pad_bound() {
-        let (kem_c, _, _) = mk_kem();
-        let pad = Some(bytes_of(0, PAD_MAX + 1));
-        assert!(matches!(
-            Hello::new(kem_c, mk_nonce(), vec![mk_cap("EXEC"), mk_cap("TTY")], pad),
-            Err(HandshakeError::HelloPadTooLarge)
-        ));
-    }
-
-    #[test]
-    fn accept_requires_non_empty_cert_chain() {
-        let (_, kem_s, _) = mk_kem();
-        assert!(matches!(
-            Accept::new(kem_s, vec![], mk_nonce(), None, None, None),
-            Err(HandshakeError::AcceptEmptyCertChain)
-        ));
-    }
-
-    #[test]
-    fn accept_rejects_oversize_cert() {
-        let (_, kem_s, _) = mk_kem();
-        let chain = vec![bytes_of(0, CERT_MAX + 1)];
-        assert!(matches!(
-            Accept::new(kem_s, chain, mk_nonce(), None, None, None),
-            Err(HandshakeError::AcceptCertTooLarge)
-        ));
-    }
-
-    #[test]
-    fn accept_ticket_param_checks() {
-        let (_, kem_s, _) = mk_kem();
-        let chain = vec![bytes_of(1, 1)];
-        let tp_zero = TicketParams {
-            lifetime_s: 0,
-            max_uses: 1,
-        };
-        assert!(matches!(
-            Accept::new(
-                kem_s.clone(),
-                chain.clone(),
-                mk_nonce(),
-                Some(tp_zero),
-                None,
-                None
-            ),
-            Err(HandshakeError::AcceptTicketLifetimeZero)
-        ));
-
-        let tp_bad = TicketParams {
-            lifetime_s: 10,
-            max_uses: 2,
-        };
-        assert!(matches!(
-            Accept::new(kem_s, chain, mk_nonce(), Some(tp_bad), None, None),
-            Err(HandshakeError::AcceptTicketMaxUsesInvalid)
-        ));
-    }
-
-    #[test]
-    fn accept_pad_bound() {
-        let (_, kem_s, _) = mk_kem();
-        let chain = vec![bytes_of(1, 1)];
-        let pad = Some(bytes_of(0, PAD_MAX + 1));
-        assert!(matches!(
-            Accept::new(kem_s, chain, mk_nonce(), None, None, pad),
-            Err(HandshakeError::AcceptPadTooLarge)
-        ));
-    }
-
-    #[test]
-    fn finish_client_cert_chain_rules() {
-        let (_, _, kem_ct) = mk_kem();
-        let (_, sig) = mk_keys();
-        let confirm = bytes_of(0, AEAD_TAG_LEN);
-        let ua = UserAuth::CertChain {
-            user_cert_chain: vec![],
-            sig: Box::new(sig.clone()),
-        };
-        assert!(matches!(
-            FinishClient::new(kem_ct.clone(), ua, confirm.clone(), None),
-            Err(HandshakeError::FinishClientCertChainEmpty)
-        ));
-        let ua = UserAuth::CertChain {
-            user_cert_chain: vec![bytes_of(0, CERT_MAX + 1)],
-            sig: Box::new(sig),
-        };
-        assert!(matches!(
-            FinishClient::new(kem_ct, ua, confirm, None),
-            Err(HandshakeError::FinishClientCertTooLarge)
-        ));
-    }
-
-    #[test]
-    fn finish_client_aead_tag_len() {
-        let (_, _, kem_ct) = mk_kem();
-        let (raw_keys, sig) = mk_keys();
-        let ua = UserAuth::RawKeys {
-            raw_keys: Box::new(raw_keys),
-            sig: Box::new(sig),
-        };
-        assert!(matches!(
-            FinishClient::new(kem_ct.clone(), ua.clone(), bytes_of(0, AEAD_TAG_LEN - 1), None),
-            Err(HandshakeError::LengthMismatch { .. })
-        ));
-        assert!(FinishClient::new(kem_ct, ua, bytes_of(0, AEAD_TAG_LEN), None).is_ok());
-    }
-
-    #[test]
-    fn finish_client_pad_bound() {
-        let (_, _, kem_ct) = mk_kem();
-        let (raw_keys, sig) = mk_keys();
-        let ua = UserAuth::RawKeys {
-            raw_keys: Box::new(raw_keys),
-            sig: Box::new(sig),
-        };
-        let pad = Some(bytes_of(0, PAD_MAX + 1));
-        assert!(matches!(
-            FinishClient::new(kem_ct, ua, bytes_of(0, AEAD_TAG_LEN), pad),
-            Err(HandshakeError::FinishClientPadTooLarge)
-        ));
-    }
-
-    #[test]
-    fn finish_server_aead_tag_len() {
-        assert!(matches!(
-            FinishServer::new(bytes_of(0, AEAD_TAG_LEN - 1), None, None),
-            Err(HandshakeError::LengthMismatch { .. })
-        ));
-        assert!(FinishServer::new(bytes_of(0, AEAD_TAG_LEN), None, None).is_ok());
-    }
-
-    #[test]
-    fn finish_server_ticket_non_empty_when_present() {
-        assert!(matches!(
-            FinishServer::new(bytes_of(0, AEAD_TAG_LEN), Some(vec![]), None),
-            Err(HandshakeError::FinishServerTicketEmpty)
-        ));
-    }
-
-    #[test]
-    fn finish_server_pad_bound() {
-        assert!(matches!(
-            FinishServer::new(
-                bytes_of(0, AEAD_TAG_LEN),
-                None,
-                Some(bytes_of(0, PAD_MAX + 1))
-            ),
-            Err(HandshakeError::FinishServerPadTooLarge)
-        ));
-    }
-
-    #[derive(Serialize)]
-    struct RawKeysInput<'a> {
-        raw_keys: &'a RawKeys,
-        sig: &'a HybridSig,
-    }
-
-    #[derive(Serialize)]
-    struct CertChainInput<'a> {
-        user_cert_chain: Vec<Vec<u8>>,
-        sig: &'a HybridSig,
-    }
-
-    #[derive(Serialize)]
-    struct BothInput<'a> {
-        raw_keys: &'a RawKeys,
-        user_cert_chain: Vec<Vec<u8>>,
-        sig: &'a HybridSig,
-    }
-
-    #[derive(Serialize)]
-    struct ExtraInput<'a> {
-        raw_keys: &'a RawKeys,
-        sig: &'a HybridSig,
-        extra: u8,
-    }
-
-    #[test]
-    fn user_auth_deser_raw_keys_ok() {
-        let (raw_keys, sig) = mk_keys();
-        let inp = RawKeysInput {
-            raw_keys: &raw_keys,
-            sig: &sig,
-        };
-        let buf = to_vec(&inp).unwrap();
-        assert!(matches!(
-            from_slice::<UserAuth>(&buf).unwrap(),
-            UserAuth::RawKeys { .. }
-        ));
-    }
-
-    #[test]
-    fn user_auth_deser_cert_chain_ok() {
-        let (_, sig) = mk_keys();
-        let inp = CertChainInput {
-            user_cert_chain: vec![bytes_of(0, 1)],
-            sig: &sig,
-        };
-        let buf = to_vec(&inp).unwrap();
-        assert!(matches!(
-            from_slice::<UserAuth>(&buf).unwrap(),
-            UserAuth::CertChain { .. }
-        ));
-    }
-
-    #[test]
-    fn user_auth_deser_requires_sig() {
-        let (raw_keys, _) = mk_keys();
-        #[derive(Serialize)]
-        struct NoSig<'a> {
-            raw_keys: &'a RawKeys,
+    // ---- Nonce & accessor tests ----
+    mod nonces_accessors {
+        use super::*;
+        #[test]
+        fn nonce32_from_bytes_success_and_error() {
+            let good = vec![1u8; NONCE_LEN]; let n = Nonce32::from_bytes(&good).unwrap(); assert_eq!(n.as_bytes(), &good[..]);
+            let bad = vec![2u8; NONCE_LEN - 1]; let err = Nonce32::from_bytes(&bad).unwrap_err();
+            match err { HandshakeError::LengthMismatch { field, expected, actual } => { assert_eq!(field, "Nonce32"); assert_eq!(expected, NONCE_LEN); assert_eq!(actual, NONCE_LEN - 1); } _ => panic!("unexpected {err:?}") }
         }
-        let buf = to_vec(&NoSig { raw_keys: &raw_keys }).unwrap();
-        assert!(from_slice::<UserAuth>(&buf).is_err());
+        #[test]
+        fn as_bytes_all_lengths_match() {
+            assert_eq!(X25519Pub([0; X25519_PK_LEN]).as_bytes().len(), X25519_PK_LEN);
+            assert_eq!(Mlkem768Pub([0; MLKEM768_PK_LEN]).as_bytes().len(), MLKEM768_PK_LEN);
+            assert_eq!(Mlkem768Ciphertext([0; MLKEM768_CT_LEN]).as_bytes().len(), MLKEM768_CT_LEN);
+            assert_eq!(Ed25519Pub([0; ED25519_PK_LEN]).as_bytes().len(), ED25519_PK_LEN);
+            assert_eq!(Mldsa44Pub([0; MLDSA44_PK_LEN]).as_bytes().len(), MLDSA44_PK_LEN);
+            assert_eq!(Ed25519Sig([0; ED25519_SIG_LEN]).as_bytes().len(), ED25519_SIG_LEN);
+            assert_eq!(Mldsa44Sig([0; MLDSA44_SIG_LEN]).as_bytes().len(), MLDSA44_SIG_LEN);
+        }
     }
 
-    #[test]
-    fn user_auth_deser_rejects_both_arms() {
-        let (raw_keys, sig) = mk_keys();
-        let inp = BothInput {
-            raw_keys: &raw_keys,
-            user_cert_chain: vec![bytes_of(0, 1)],
-            sig: &sig,
-        };
-        let buf = to_vec(&inp).unwrap();
-        let err = from_slice::<UserAuth>(&buf).unwrap_err();
-        assert!(err.to_string().contains("ambiguous"));
+    // ---- HELLO tests ----
+    mod hello {
+        use super::*;
+        #[test]
+        fn version_must_be_1() {
+            let (kem_c, _, _) = super::mk_kem();
+            let h = Hello { v: 2, kem_client_ephemeral: kem_c, client_nonce: super::mk_nonce(), capabilities: vec![super::mk_cap("EXEC"), super::mk_cap("TTY")], pad: None };
+            assert!(matches!(h.validate(), Err(HandshakeError::HelloBadVersion)));
+        }
+        #[test]
+        fn missing_baseline_caps_errors() {
+            let (kem_c, _, _) = super::mk_kem(); let nonce = super::mk_nonce();
+            assert!(matches!(Hello::new(kem_c.clone(), nonce.clone(), vec![super::mk_cap("EXEC")], None), Err(HandshakeError::HelloBadCapsFormat)));
+            assert!(matches!(Hello::new(kem_c, nonce, vec![super::mk_cap("TTY")], None), Err(HandshakeError::HelloBadCapsFormat)));
+        }
+        #[test]
+        fn caps_unsorted_or_duplicate_errors() {
+            let (kem_c, _, _) = super::mk_kem(); let nonce = super::mk_nonce();
+            let caps = vec![super::mk_cap("TTY"), super::mk_cap("EXEC")];
+            assert!(matches!(Hello::new(kem_c.clone(), nonce.clone(), caps, None), Err(HandshakeError::HelloBadCapsOrder)));
+            let caps = vec![super::mk_cap("EXEC"), super::mk_cap("EXEC"), super::mk_cap("TTY")];
+            assert!(matches!(Hello::new(kem_c.clone(), nonce.clone(), caps, None), Err(HandshakeError::HelloBadCapsOrder)));
+            let mut caps = vec![super::mk_cap("EXEC"), super::mk_cap("TTY")];
+            for i in 0..CAP_COUNT_MAX - 1 { caps.push(super::mk_cap(&format!("Z{:02}", i))); }
+            caps.sort(); assert_eq!(caps.len(), CAP_COUNT_MAX + 1);
+            assert!(matches!(Hello::new(kem_c, nonce, caps, None), Err(HandshakeError::HelloBadCapsOrder)));
+        }
+        #[test]
+        fn pad_over_max_errors() {
+            let (kem_c, _, _) = super::mk_kem(); let pad = Some(super::bytes_of(0, PAD_MAX + 1));
+            assert!(matches!(Hello::new(kem_c, super::mk_nonce(), vec![super::mk_cap("EXEC"), super::mk_cap("TTY")], pad), Err(HandshakeError::HelloPadTooLarge)));
+        }
+        #[test]
+        fn pad_at_max_ok() {
+            let (kem_c, _, _) = super::mk_kem(); let pad = Some(vec![0u8; PAD_MAX]);
+            let h = Hello::new(kem_c, super::mk_nonce(), vec![super::mk_cap("EXEC"), super::mk_cap("TTY")], pad).unwrap();
+            assert!(h.pad.is_some());
+        }
     }
 
-    #[test]
-    fn user_auth_deser_ignores_unknown_fields() {
-        let (raw_keys, sig) = mk_keys();
-        let inp = ExtraInput {
-            raw_keys: &raw_keys,
-            sig: &sig,
-            extra: 7,
-        };
-        let buf = to_vec(&inp).unwrap();
-        assert!(matches!(
-            from_slice::<UserAuth>(&buf).unwrap(),
-            UserAuth::RawKeys { .. }
-        ));
+    // ---- ACCEPT tests ----
+    mod accept {
+        use super::*;
+        #[test]
+        fn requires_non_empty_cert_chain() {
+            let (_, kem_s, _) = super::mk_kem();
+            assert!(matches!(Accept::new(kem_s, vec![], super::mk_nonce(), None, None, None), Err(HandshakeError::AcceptEmptyCertChain)));
+        }
+        #[test]
+        fn rejects_oversize_cert() {
+            let (_, kem_s, _) = super::mk_kem(); let chain = vec![super::bytes_of(0, CERT_MAX + 1)];
+            assert!(matches!(Accept::new(kem_s, chain, super::mk_nonce(), None, None, None), Err(HandshakeError::AcceptCertTooLarge)));
+        }
+        #[test]
+        fn ticket_param_checks() {
+            let (_, kem_s, _) = super::mk_kem(); let chain = vec![super::bytes_of(1, 1)];
+            let tp_zero = TicketParams { lifetime_s: 0, max_uses: 1 };
+            assert!(matches!(Accept::new(kem_s.clone(), chain.clone(), super::mk_nonce(), Some(tp_zero), None, None), Err(HandshakeError::AcceptTicketLifetimeZero)));
+            let tp_bad = TicketParams { lifetime_s: 10, max_uses: 2 };
+            assert!(matches!(Accept::new(kem_s, chain, super::mk_nonce(), Some(tp_bad), None, None), Err(HandshakeError::AcceptTicketMaxUsesInvalid)));
+        }
+        #[test]
+        fn pad_over_max_errors() {
+            let (_, kem_s, _) = super::mk_kem(); let chain = vec![super::bytes_of(1, 1)]; let pad = Some(super::bytes_of(0, PAD_MAX + 1));
+            assert!(matches!(Accept::new(kem_s, chain, super::mk_nonce(), None, None, pad), Err(HandshakeError::AcceptPadTooLarge)));
+        }
+        #[test]
+        fn ticket_and_boundary_pad_ok() {
+            let (_, kem_s, _) = super::mk_kem(); let chain = vec![super::bytes_of(7, 42)];
+            let tp = TicketParams { lifetime_s: 60, max_uses: 1 };
+            let a = Accept::new(kem_s, chain, super::mk_nonce(), Some(tp), Some("OCSP_MUST_STAPLE".to_string()), Some(super::bytes_of(1, PAD_MAX))).unwrap();
+            assert_eq!(a.pad.unwrap().len(), PAD_MAX);
+        }
+        #[test]
+        fn ticket_params_validity_ok() {
+            let (_, kem_s, _) = super::mk_kem();
+            let a = Accept::new(kem_s, vec![super::bytes_of(1,1)], super::mk_nonce(), Some(TicketParams{ lifetime_s:1, max_uses:1}), None, None).unwrap();
+            assert!(a.ticket_params.is_some());
+        }
     }
 
-    #[derive(Serialize)]
-    struct HelloExtra {
-        #[serde(flatten)]
-        base: Hello,
-        xtra: u8,
+    // ---- FINISH_CLIENT tests ----
+    mod finish_client {
+        use super::*;
+        #[test]
+        fn cert_chain_error_cases() {
+            let (_, _, kem_ct) = super::mk_kem(); let (_, sig) = super::mk_keys(); let confirm = super::bytes_of(0, AEAD_TAG_LEN);
+            let ua_empty = UserAuth::CertChain { user_cert_chain: vec![], sig: Box::new(sig.clone()) }; // empty
+            assert!(matches!(FinishClient::new(kem_ct.clone(), ua_empty, confirm.clone(), None), Err(HandshakeError::FinishClientCertChainEmpty)));
+            let ua_big = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(0, CERT_MAX + 1)], sig: Box::new(sig) };
+            assert!(matches!(FinishClient::new(kem_ct, ua_big, confirm, None), Err(HandshakeError::FinishClientCertTooLarge)));
+        }
+        #[test]
+        fn aead_tag_length_checks() {
+            let (_, _, kem_ct) = super::mk_kem(); let (raw_keys, sig) = super::mk_keys();
+            let ua = UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) };
+            assert!(matches!(FinishClient::new(kem_ct.clone(), ua.clone(), super::bytes_of(0, AEAD_TAG_LEN - 1), None), Err(HandshakeError::LengthMismatch { .. })));
+            assert!(FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), None).is_ok());
+        }
+        #[test]
+        fn pad_over_max_errors() {
+            let (_, _, kem_ct) = super::mk_kem(); let (raw_keys, sig) = super::mk_keys();
+            let ua = UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) };
+            let pad = Some(super::bytes_of(0, PAD_MAX + 1));
+            assert!(matches!(FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), pad), Err(HandshakeError::FinishClientPadTooLarge)));
+        }
+        #[test]
+        fn cert_chain_success_with_pad_boundary() {
+            let (_, _, kem_ct) = super::mk_kem(); let (_, sig) = super::mk_keys();
+            let ua = UserAuth::CertChain { user_cert_chain: vec![super::bytes_of(3,10)], sig: Box::new(sig) };
+            let fc = FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), Some(super::bytes_of(9, PAD_MAX))).unwrap();
+            assert_eq!(fc.client_confirm.len(), AEAD_TAG_LEN); assert_eq!(fc.pad.unwrap().len(), PAD_MAX);
+        }
     }
 
-    #[derive(Serialize)]
-    struct AcceptExtra {
-        #[serde(flatten)]
-        base: Accept,
-        xtra: u8,
+    // ---- FINISH_SERVER tests ----
+    mod finish_server {
+        use super::*;
+        #[test]
+        fn aead_tag_length_checks() {
+            assert!(matches!(FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN - 1), None, None), Err(HandshakeError::LengthMismatch { .. })));
+            assert!(FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), None, None).is_ok());
+        }
+        #[test]
+        fn ticket_non_empty_when_present() {
+            assert!(matches!(FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), Some(vec![]), None), Err(HandshakeError::FinishServerTicketEmpty)));
+        }
+        #[test]
+        fn pad_over_max_errors() {
+            assert!(matches!(FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), None, Some(super::bytes_of(0, PAD_MAX + 1))), Err(HandshakeError::FinishServerPadTooLarge)));
+        }
+        #[test]
+        fn success_with_ticket_and_boundary_pad() {
+            let ticket = vec![5u8; 8]; let pad = Some(vec![6u8; PAD_MAX]);
+            let fs = FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), Some(ticket.clone()), pad).unwrap();
+            assert_eq!(fs.server_confirm.len(), AEAD_TAG_LEN); assert_eq!(fs.resumption_ticket.unwrap(), ticket);
+        }
     }
 
-    #[derive(Serialize)]
-    struct FinishClientExtra {
-        #[serde(flatten)]
-        base: FinishClient,
-        xtra: u8,
+    // ---- UserAuth tests ----
+    mod user_auth {
+        use super::*;
+        #[derive(Serialize)] struct RawKeysInput<'a> { raw_keys: &'a RawKeys, sig: &'a HybridSig }
+        #[derive(Serialize)] struct CertChainInput<'a> { user_cert_chain: Vec<Vec<u8>>, sig: &'a HybridSig }
+        #[derive(Serialize)] struct BothInput<'a> { raw_keys: &'a RawKeys, user_cert_chain: Vec<Vec<u8>>, sig: &'a HybridSig }
+        #[derive(Serialize)] struct ExtraInput<'a> { raw_keys: &'a RawKeys, sig: &'a HybridSig, extra: u8 }
+        #[test]
+        fn deser_raw_keys_ok() {
+            let (raw_keys, sig) = super::mk_keys(); let buf = to_vec(&RawKeysInput { raw_keys: &raw_keys, sig: &sig }).unwrap();
+            assert!(matches!(from_slice::<UserAuth>(&buf).unwrap(), UserAuth::RawKeys { .. }));
+        }
+        #[test]
+        fn deser_cert_chain_ok() {
+            let (_, sig) = super::mk_keys(); let buf = to_vec(&CertChainInput { user_cert_chain: vec![super::bytes_of(0,1)], sig: &sig }).unwrap();
+            assert!(matches!(from_slice::<UserAuth>(&buf).unwrap(), UserAuth::CertChain { .. }));
+        }
+        #[test]
+        fn deser_requires_sig() {
+            let (raw_keys, _) = super::mk_keys(); #[derive(Serialize)] struct NoSig<'a>{ raw_keys:&'a RawKeys }
+            let buf = to_vec(&NoSig { raw_keys: &raw_keys }).unwrap(); assert!(from_slice::<UserAuth>(&buf).is_err());
+        }
+        #[test]
+        fn deser_rejects_both_arms() {
+            let (raw_keys, sig) = super::mk_keys(); let buf = to_vec(&BothInput { raw_keys: &raw_keys, user_cert_chain: vec![super::bytes_of(0,1)], sig: &sig }).unwrap();
+            let err = from_slice::<UserAuth>(&buf).unwrap_err(); assert!(err.to_string().contains("ambiguous"));
+        }
+        #[test]
+        fn deser_ignores_unknown_fields() {
+            let (raw_keys, sig) = super::mk_keys(); let buf = to_vec(&ExtraInput { raw_keys: &raw_keys, sig: &sig, extra:7 }).unwrap();
+            assert!(matches!(from_slice::<UserAuth>(&buf).unwrap(), UserAuth::RawKeys { .. }));
+        }
     }
 
-    #[derive(Serialize)]
-    struct FinishServerExtra {
-        #[serde(flatten)]
-        base: FinishServer,
-        xtra: u8,
+    // ---- Serde top-level unknown fields ----
+    mod serde_unknown_fields {
+        use super::*;
+        #[derive(Serialize)] struct HelloExtra { #[serde(flatten)] base: Hello, xtra: u8 }
+        #[derive(Serialize)] struct AcceptExtra { #[serde(flatten)] base: Accept, xtra: u8 }
+        #[derive(Serialize)] struct FinishClientExtra { #[serde(flatten)] base: FinishClient, xtra: u8 }
+        #[derive(Serialize)] struct FinishServerExtra { #[serde(flatten)] base: FinishServer, xtra: u8 }
+        #[test]
+        fn deny_unknown_fields_rejected() {
+            let (kem_c, kem_s, kem_ct) = super::mk_kem();
+            let hello = Hello::new(kem_c, super::mk_nonce(), vec![super::mk_cap("EXEC"), super::mk_cap("TTY")], None).unwrap();
+            let buf = to_vec(&HelloExtra { base: hello, xtra: 1 }).unwrap(); assert!(from_slice::<Hello>(&buf).is_err());
+            let accept = Accept::new(kem_s, vec![super::bytes_of(0,1)], super::mk_nonce(), None, None, None).unwrap();
+            let buf = to_vec(&AcceptExtra { base: accept, xtra: 1 }).unwrap(); assert!(from_slice::<Accept>(&buf).is_err());
+            let (raw_keys, sig) = super::mk_keys();
+            let fc = FinishClient::new(kem_ct, UserAuth::RawKeys { raw_keys: Box::new(raw_keys), sig: Box::new(sig) }, super::bytes_of(0, AEAD_TAG_LEN), None).unwrap();
+            let buf = to_vec(&FinishClientExtra { base: fc, xtra: 1 }).unwrap(); assert!(from_slice::<FinishClient>(&buf).is_err());
+            let fs = FinishServer::new(super::bytes_of(0, AEAD_TAG_LEN), None, None).unwrap();
+            let buf = to_vec(&FinishServerExtra { base: fs, xtra: 1 }).unwrap(); assert!(from_slice::<FinishServer>(&buf).is_err());
+        }
     }
 
-    #[test]
-    fn top_level_deny_unknown_fields() {
-        let (kem_c, kem_s, kem_ct) = mk_kem();
-        let hello = Hello::new(
-            kem_c,
-            mk_nonce(),
-            vec![mk_cap("EXEC"), mk_cap("TTY")],
-            None,
-        )
-        .unwrap();
-        let buf = to_vec(&HelloExtra { base: hello, xtra: 1 }).unwrap();
-        assert!(from_slice::<Hello>(&buf).is_err());
-
-        let accept = Accept::new(
-            kem_s,
-            vec![bytes_of(0, 1)],
-            mk_nonce(),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let buf = to_vec(&AcceptExtra { base: accept, xtra: 1 }).unwrap();
-        assert!(from_slice::<Accept>(&buf).is_err());
-
-        let (raw_keys, sig) = mk_keys();
-        let fc = FinishClient::new(
-            kem_ct,
-            UserAuth::RawKeys {
-                raw_keys: Box::new(raw_keys),
-                sig: Box::new(sig),
-            },
-            bytes_of(0, AEAD_TAG_LEN),
-            None,
-        )
-        .unwrap();
-        let buf = to_vec(&FinishClientExtra { base: fc, xtra: 1 }).unwrap();
-        assert!(from_slice::<FinishClient>(&buf).is_err());
-
-        let fs = FinishServer::new(bytes_of(0, AEAD_TAG_LEN), None, None).unwrap();
-        let buf = to_vec(&FinishServerExtra { base: fs, xtra: 1 }).unwrap();
-        assert!(from_slice::<FinishServer>(&buf).is_err());
+    // ---- Large array serde error path ----
+    mod large_array_serde {
+        use super::*;
+        #[test]
+        fn length_mismatch_each_newtype() {
+            let short = vec![0u8; 10]; let buf = to_vec(&short).unwrap();
+            for (name, expected) in [("Mlkem768Pub", MLKEM768_PK_LEN),("Mlkem768Ciphertext", MLKEM768_CT_LEN),("Mldsa44Pub", MLDSA44_PK_LEN),("Ed25519Sig", ED25519_SIG_LEN),("Mldsa44Sig", MLDSA44_SIG_LEN)] {
+                let err_str = match name {
+                    "Mlkem768Pub" => serde_cbor::from_slice::<Mlkem768Pub>(&buf).unwrap_err().to_string(),
+                    "Mlkem768Ciphertext" => serde_cbor::from_slice::<Mlkem768Ciphertext>(&buf).unwrap_err().to_string(),
+                    "Mldsa44Pub" => serde_cbor::from_slice::<Mldsa44Pub>(&buf).unwrap_err().to_string(),
+                    "Ed25519Sig" => serde_cbor::from_slice::<Ed25519Sig>(&buf).unwrap_err().to_string(),
+                    "Mldsa44Sig" => serde_cbor::from_slice::<Mldsa44Sig>(&buf).unwrap_err().to_string(),
+                    _ => unreachable!(),
+                }; assert!(err_str.contains("invalid length"), "{} err: {}", name, err_str); assert!(err_str.contains(&expected.to_string()));
+            }
+        }
     }
 }
 
