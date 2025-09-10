@@ -854,7 +854,17 @@ impl FinishServer {
 mod tests {
     use super::*;
     use serde::Serialize;
-    use serde_cbor::{from_slice, to_vec};
+    use std::io::Cursor;
+
+    // Test-local CBOR helpers using ciborium (serde-compatible, deterministic)
+    fn to_vec<T: Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
+        let mut buf = Vec::new();
+        ciborium::ser::into_writer(v, &mut buf)?;
+        Ok(buf)
+    }
+    fn from_slice<T: for<'de> serde::Deserialize<'de>>(b: &[u8]) -> Result<T, ciborium::de::Error<std::io::Error>> {
+        ciborium::de::from_reader(Cursor::new(b))
+    }
     // ---- Shared helpers ----
     fn bytes_of(n: u8, len: usize) -> Vec<u8> { vec![n; len] }
     fn mk_cap(s: &str) -> Capability { Capability::parse(s).unwrap() }
@@ -1128,11 +1138,11 @@ mod tests {
             let short = vec![0u8; 10]; let buf = to_vec(&short).unwrap();
             for (name, expected) in [("Mlkem768Pub", MLKEM768_PK_LEN),("Mlkem768Ciphertext", MLKEM768_CT_LEN),("Mldsa44Pub", MLDSA44_PK_LEN),("Ed25519Sig", ED25519_SIG_LEN),("Mldsa44Sig", MLDSA44_SIG_LEN)] {
                 let err_str = match name {
-                    "Mlkem768Pub" => serde_cbor::from_slice::<Mlkem768Pub>(&buf).unwrap_err().to_string(),
-                    "Mlkem768Ciphertext" => serde_cbor::from_slice::<Mlkem768Ciphertext>(&buf).unwrap_err().to_string(),
-                    "Mldsa44Pub" => serde_cbor::from_slice::<Mldsa44Pub>(&buf).unwrap_err().to_string(),
-                    "Ed25519Sig" => serde_cbor::from_slice::<Ed25519Sig>(&buf).unwrap_err().to_string(),
-                    "Mldsa44Sig" => serde_cbor::from_slice::<Mldsa44Sig>(&buf).unwrap_err().to_string(),
+                    "Mlkem768Pub" => from_slice::<Mlkem768Pub>(&buf).unwrap_err().to_string(),
+                    "Mlkem768Ciphertext" => from_slice::<Mlkem768Ciphertext>(&buf).unwrap_err().to_string(),
+                    "Mldsa44Pub" => from_slice::<Mldsa44Pub>(&buf).unwrap_err().to_string(),
+                    "Ed25519Sig" => from_slice::<Ed25519Sig>(&buf).unwrap_err().to_string(),
+                    "Mldsa44Sig" => from_slice::<Mldsa44Sig>(&buf).unwrap_err().to_string(),
                     _ => unreachable!(),
                 }; assert!(err_str.contains("invalid length"), "{} err: {}", name, err_str); assert!(err_str.contains(&expected.to_string()));
             }
