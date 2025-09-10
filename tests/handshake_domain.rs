@@ -1,3 +1,6 @@
+// integration and RTT tests for handshake domain types
+// unit tests live with the types they test
+
 use quicshell::domain::handshake::*;
 use serde_cbor::{from_slice, to_vec};
 use serde::Serialize;
