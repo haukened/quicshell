@@ -885,7 +885,7 @@ mod tests {
         #[test]
         fn parse_accepts_valid_tokens() {
             for tok in ["EXEC", "TTY", "A_B", "FOO1"] {
-                assert!(Capability::parse(tok).is_ok(), "token {}", tok);
+                assert!(Capability::parse(tok).is_ok(), "token {tok}");
             }
             let long = "X".repeat(CAP_TOKEN_MAX);
             assert!(Capability::parse(&long).is_ok());
@@ -893,7 +893,7 @@ mod tests {
         #[test]
         fn parse_rejects_invalid_tokens() {
             for tok in ["exec", "A-B", "", "FOO!"] {
-                assert!(Capability::parse(tok).is_err(), "token {}", tok);
+                assert!(Capability::parse(tok).is_err(), "token {tok}");
             }
             let long = "X".repeat(CAP_TOKEN_MAX + 1);
             assert!(Capability::parse(&long).is_err());
@@ -903,7 +903,7 @@ mod tests {
             let c = super::mk_cap("EXEC");
             let s: String = c.clone().into();
             assert_eq!(s, "EXEC");
-            assert!(format!("{:?}", c).contains("Capability(EXEC)"));
+            assert!(format!("{c:?}").contains("Capability(EXEC)"));
         }
         #[test]
         fn serialize_round_trip_caps_are_sorted_unique() {
@@ -1046,7 +1046,7 @@ mod tests {
             ));
             let mut caps = vec![super::mk_cap("EXEC"), super::mk_cap("TTY")];
             for i in 0..CAP_COUNT_MAX - 1 {
-                caps.push(super::mk_cap(&format!("Z{:02}", i)));
+                caps.push(super::mk_cap(&format!("Z{i:02}")));
             }
             caps.sort();
             assert_eq!(caps.len(), CAP_COUNT_MAX + 1);
@@ -1198,7 +1198,7 @@ mod tests {
             ));
             let ua_big = UserAuth::CertChain {
                 user_cert_chain: vec![super::bytes_of(0, CERT_MAX + 1)],
-                sig: sig,
+                sig,
             };
             assert!(matches!(
                 FinishClient::new(kem_ct, ua_big, confirm, None),
@@ -1209,10 +1209,7 @@ mod tests {
         fn aead_tag_length_checks() {
             let (_, _, kem_ct) = super::mk_kem();
             let (raw_keys, sig) = super::mk_keys();
-            let ua = UserAuth::RawKeys {
-                raw_keys: raw_keys,
-                sig: sig,
-            };
+            let ua = UserAuth::RawKeys { raw_keys, sig };
             assert!(matches!(
                 FinishClient::new(
                     kem_ct.clone(),
@@ -1228,10 +1225,7 @@ mod tests {
         fn pad_over_max_errors() {
             let (_, _, kem_ct) = super::mk_kem();
             let (raw_keys, sig) = super::mk_keys();
-            let ua = UserAuth::RawKeys {
-                raw_keys: raw_keys,
-                sig: sig,
-            };
+            let ua = UserAuth::RawKeys { raw_keys, sig };
             let pad = Some(super::bytes_of(0, PAD_MAX + 1));
             assert!(matches!(
                 FinishClient::new(kem_ct, ua, super::bytes_of(0, AEAD_TAG_LEN), pad),
@@ -1244,7 +1238,7 @@ mod tests {
             let (_, sig) = super::mk_keys();
             let ua = UserAuth::CertChain {
                 user_cert_chain: vec![super::bytes_of(3, 10)],
-                sig: sig,
+                sig,
             };
             let fc = FinishClient::new(
                 kem_ct,
@@ -1349,13 +1343,13 @@ mod tests {
                 UserAuth::CertChain { .. }
             ));
         }
+        #[derive(Serialize)]
+        struct NoSig<'a> {
+            raw_keys: &'a RawKeys,
+        }
         #[test]
         fn deser_requires_sig() {
             let (raw_keys, _) = super::mk_keys();
-            #[derive(Serialize)]
-            struct NoSig<'a> {
-                raw_keys: &'a RawKeys,
-            }
             let buf = to_vec(&NoSig {
                 raw_keys: &raw_keys,
             })
@@ -1451,10 +1445,7 @@ mod tests {
             let (raw_keys, sig) = super::mk_keys();
             let fc = FinishClient::new(
                 kem_ct,
-                UserAuth::RawKeys {
-                    raw_keys: raw_keys,
-                    sig: sig,
-                },
+                UserAuth::RawKeys { raw_keys, sig },
                 super::bytes_of(0, AEAD_TAG_LEN),
                 None,
             )
@@ -1491,12 +1482,7 @@ mod tests {
                     "Mldsa44Sig" => from_slice::<Mldsa44Sig>(&buf).unwrap_err().to_string(),
                     _ => unreachable!(),
                 };
-                assert!(
-                    err_str.contains("invalid length"),
-                    "{} err: {}",
-                    name,
-                    err_str
-                );
+                assert!(err_str.contains("invalid length"), "{name} err: {err_str}",);
                 assert!(err_str.contains(&expected.to_string()));
             }
         }

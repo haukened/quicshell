@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 #![cfg(test)]
-use std::io::Cursor;
 use crate::domain::handshake::*;
+use std::io::Cursor;
 
 /// Simple byte filler
-pub fn bytes_of(b: u8, len: usize) -> Vec<u8> { vec![b; len] }
+pub fn bytes_of(b: u8, len: usize) -> Vec<u8> {
+    vec![b; len]
+}
 
 /// CBOR helpers for tests (deterministic by default)
 pub fn to_vec<T: serde::Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
@@ -12,22 +14,36 @@ pub fn to_vec<T: serde::Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Erro
     ciborium::ser::into_writer(v, &mut buf)?;
     Ok(buf)
 }
-pub fn from_slice<T: for<'de> serde::Deserialize<'de>>(b: &[u8]) -> Result<T, ciborium::de::Error<std::io::Error>> {
+pub fn from_slice<T: for<'de> serde::Deserialize<'de>>(
+    b: &[u8],
+) -> Result<T, ciborium::de::Error<std::io::Error>> {
     ciborium::de::from_reader(Cursor::new(b))
 }
 
 /// Capability helper
-pub fn mk_cap(s: &str) -> Capability { Capability::parse(s).unwrap() }
+pub fn mk_cap(s: &str) -> Capability {
+    Capability::parse(s).unwrap()
+}
 
 /// 32-byte zeroed nonce
-pub fn mk_nonce() -> Nonce32 { Nonce32([0u8; 32]) }
+pub fn mk_nonce() -> Nonce32 {
+    Nonce32([0u8; 32])
+}
 
 /// Construct dummy KEM values (client/server ephemeral + ciphertext)
 pub fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
     (
-        KemClientEphemeral { x25519_pub: X25519Pub([0; 32]), mlkem_pub: Mlkem768Pub([0; 1184]) },
-        KemServerEphemeral { x25519_pub: X25519Pub([0; 32]), mlkem_pub: Mlkem768Pub([0; 1184]) },
-        KemCiphertexts { mlkem_ct: Mlkem768Ciphertext([0; 1088]) },
+        KemClientEphemeral {
+            x25519_pub: X25519Pub([0; 32]),
+            mlkem_pub: Mlkem768Pub([0; 1184]),
+        },
+        KemServerEphemeral {
+            x25519_pub: X25519Pub([0; 32]),
+            mlkem_pub: Mlkem768Pub([0; 1184]),
+        },
+        KemCiphertexts {
+            mlkem_ct: Mlkem768Ciphertext([0; 1088]),
+        },
     )
 }
 
@@ -59,14 +75,20 @@ pub fn mk_accept() -> Accept {
     Accept::new(kem_s, certs, mk_nonce(), None, None, None).unwrap()
 }
 
-/// Construct a dummy FinishClient with dummy kem ciphertext and raw keys+sig
+/// Construct a dummy `FinishClient` with dummy KEM ciphertext and raw keys+sig
 pub fn mk_finish_client() -> FinishClient {
     let (_, _, kem_ct) = mk_kem();
     let (raw, sig) = mk_keys();
-    FinishClient::new(kem_ct, UserAuth::RawKeys { raw_keys: raw, sig }, vec![0u8; 16], None).unwrap()
+    FinishClient::new(
+        kem_ct,
+        UserAuth::RawKeys { raw_keys: raw, sig },
+        vec![0u8; 16],
+        None,
+    )
+    .unwrap()
 }
 
-/// Construct a dummy FinishServer with confirm tag and no ticket
+/// Construct a dummy `FinishServer` with confirm tag and no ticket
 pub fn mk_finish_server() -> FinishServer {
     FinishServer::new(vec![0u8; 16], None, None).unwrap()
 }

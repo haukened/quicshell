@@ -10,7 +10,7 @@
 //!   before calling `from_cbor` (the protocol adapter does this).
 //! - `ciborium` emits deterministic/canonical encodings by default.
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::io::Cursor;
 
 /// Errors produced by the generic codec.
@@ -31,6 +31,10 @@ pub enum CodecError {
 }
 
 /// Serialize any `T: Serialize` to CBOR bytes (deterministic under ciborium).
+///
+/// # Errors
+///
+/// Returns a [`CodecError::Ser`] if serialization fails.
 pub fn to_cbor<T: Serialize>(v: &T) -> Result<Vec<u8>, CodecError> {
     let mut buf = Vec::with_capacity(256);
     ciborium::ser::into_writer(v, &mut buf)?;
@@ -43,15 +47,28 @@ pub fn to_cbor<T: Serialize>(v: &T) -> Result<Vec<u8>, CodecError> {
 /// * Rejects trailing garbage after a valid item.
 /// * Rejects non-canonical encodings by re-encoding deterministically and
 ///   requiring an exact byte-for-byte match to the input.
+///
+/// # Errors
+///
+/// * [`CodecError::De`] if deserialization fails or there are trailing bytes.
+/// * [`CodecError::NonCanonical`] if the input is well‑formed but not canonical.
 pub fn from_cbor<T: DeserializeOwned + Serialize>(b: &[u8]) -> Result<T, CodecError> {
     let mut cur = Cursor::new(b);
     let value: T = ciborium::de::from_reader(&mut cur)?;
     // Strict: no trailing bytes
-    if (cur.position() as usize) != b.len() {
-        return Err(CodecError::De(ciborium::de::Error::Io(std::io::Error::new(
+    let pos = usize::try_from(cur.position()).map_err(|_| {
+        CodecError::De(ciborium::de::Error::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "trailing bytes after CBOR value",
-        ))));
+            "cursor position overflow",
+        )))
+    })?;
+    if pos != b.len() {
+        return Err(CodecError::De(ciborium::de::Error::Io(
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "trailing bytes after CBOR value",
+            ),
+        )));
     }
     // Canonical enforcement: deterministic re-encode must match input
     // see docs/canonical_cbor.md for rationale
@@ -68,7 +85,10 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-    struct Demo { a: u8, b: u8 }
+    struct Demo {
+        a: u8,
+        b: u8,
+    }
 
     #[test]
     fn roundtrip_deterministic_ok() {

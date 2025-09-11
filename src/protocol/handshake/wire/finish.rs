@@ -1,14 +1,25 @@
-//! Wire encoding for FINISH_CLIENT / FINISH_SERVER (stubs)
+//! Wire encoding for `FINISH_CLIENT` / `FINISH_SERVER` (stubs)
 
-use super::frame::{prepend_frame, split_frame, FrameType};
-use crate::core::cbor::{from_cbor, to_cbor, CodecError};
+use super::frame::{FrameType, prepend_frame, split_frame};
+use crate::core::cbor::{CodecError, from_cbor, to_cbor};
 use crate::domain::handshake::{FinishClient, FinishServer};
 
+/// Encode a `FINISH_CLIENT` frame.
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_wire_finish_client(fc: &FinishClient) -> Result<Vec<u8>, CodecError> {
     let cbor = to_cbor(fc)?;
-    Ok(prepend_frame(FrameType::FinishClient, cbor))
+    Ok(prepend_frame(FrameType::FinishClient, &cbor))
 }
 
+/// Decode a `FINISH_CLIENT` frame.
+///
+/// # Errors
+///
+/// * Returns an error if the frame type is not `FINISH_CLIENT`.
+/// * Returns CBOR decoding errors.
 pub fn decode_wire_finish_client(bytes: &[u8]) -> Result<FinishClient, CodecError> {
     let (ft, payload) = split_frame(bytes)?;
     if ft != FrameType::FinishClient {
@@ -22,11 +33,22 @@ pub fn decode_wire_finish_client(bytes: &[u8]) -> Result<FinishClient, CodecErro
     from_cbor(payload)
 }
 
+/// Encode a `FINISH_SERVER` frame.
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_wire_finish_server(fs: &FinishServer) -> Result<Vec<u8>, CodecError> {
     let cbor = to_cbor(fs)?;
-    Ok(prepend_frame(FrameType::FinishServer, cbor))
+    Ok(prepend_frame(FrameType::FinishServer, &cbor))
 }
 
+/// Decode a `FINISH_SERVER` frame.
+///
+/// # Errors
+///
+/// * Returns an error if the frame type is not `FINISH_SERVER`.
+/// * Returns CBOR decoding errors.
 pub fn decode_wire_finish_server(bytes: &[u8]) -> Result<FinishServer, CodecError> {
     let (ft, payload) = split_frame(bytes)?;
     if ft != FrameType::FinishServer {
@@ -40,12 +62,22 @@ pub fn decode_wire_finish_server(bytes: &[u8]) -> Result<FinishServer, CodecErro
     from_cbor(payload)
 }
 
+/// Encode a `FINISH_CLIENT` message for transcript hashing (padding stripped).
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_transcript_finish_client(fc: &FinishClient) -> Result<Vec<u8>, CodecError> {
     let mut tmp = fc.clone();
     tmp.pad = None;
     to_cbor(&tmp)
 }
 
+/// Encode a `FINISH_SERVER` message for transcript hashing (padding stripped).
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_transcript_finish_server(fs: &FinishServer) -> Result<Vec<u8>, CodecError> {
     let mut tmp = fs.clone();
     tmp.pad = None;

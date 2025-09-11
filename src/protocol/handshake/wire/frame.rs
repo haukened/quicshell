@@ -53,7 +53,7 @@
 //! - All helpers are `#[inline]` to encourage monomorphization in hot paths.
 //! - Conversion and slicing are zero-copy aside from the single-byte push in
 //!   `prepend_frame`.
-//! Handshake frame preamble and helpers.
+//!   Handshake frame preamble and helpers.
 
 use crate::core::cbor::CodecError;
 
@@ -64,9 +64,9 @@ pub enum FrameType {
     Hello = 0x01,
     /// An ACCEPT frame, sent by the server in response to a HELLO.
     Accept = 0x02,
-    /// A FINISH_CLIENT frame, sent by the client to finalize the handshake.
+    /// A `FINISH_CLIENT` frame, sent by the client to finalize the handshake.
     FinishClient = 0x03,
-    /// A FINISH_SERVER frame, sent by the server to finalize the handshake.
+    /// A `FINISH_SERVER` frame, sent by the server to finalize the handshake.
     FinishServer = 0x04,
 }
 
@@ -102,15 +102,26 @@ impl TryFrom<u8> for FrameType {
 }
 
 /// Prepends a frame type byte to the given payload, returning a new `Vec<u8>`.
+///
+/// # Errors
+///
+/// This function is infallible; the section is present to satisfy pedantic lint expectations.
+#[must_use]
 #[inline]
-pub fn prepend_frame(ft: FrameType, payload: Vec<u8>) -> Vec<u8> {
+pub fn prepend_frame(ft: FrameType, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(1 + payload.len());
     out.push(ft as u8);
-    out.extend_from_slice(&payload);
+    out.extend_from_slice(payload);
     out
 }
 
 /// Splits a raw input buffer into its frame type and payload.
+///
+/// # Errors
+///
+/// * Returns an error if the input is empty.
+/// * Returns an error if the frame type byte is unknown.
+/// * Returns CBOR-style decode errors propagated via `CodecError::De`.
 #[inline]
 pub fn split_frame(input: &[u8]) -> Result<(FrameType, &[u8]), CodecError> {
     if input.is_empty() {
@@ -149,10 +160,10 @@ mod tests {
 
     #[test]
     fn prepend_a_frame() {
-        let payload = vec![0xAA, 0xBB, 0xCC];
-        let framed = prepend_frame(FrameType::Accept, payload.clone());
+        let payload = [0xAA, 0xBB, 0xCC];
+        let framed = prepend_frame(FrameType::Accept, &payload);
         assert_eq!(framed[0], FrameType::Accept as u8);
-        assert_eq!(&framed[1..], &payload[..]);
+        assert_eq!(&framed[1..], &payload);
     }
 
     #[test]
@@ -177,16 +188,16 @@ mod tests {
 
     #[test]
     fn prepend_capacity_exact() {
-        let payload = vec![0u8; 8];
-        let framed = prepend_frame(FrameType::Hello, payload.clone());
+        let payload = [0u8; 8];
+        let framed = prepend_frame(FrameType::Hello, &payload);
         assert_eq!(framed.len(), 1 + payload.len());
-        assert_eq!(&framed[1..], &payload[..]);
+        assert_eq!(&framed[1..], &payload);
     }
 
     #[test]
     fn split_frame_zero_copy_slice() {
-        let payload = vec![1, 2, 3];
-        let framed = prepend_frame(FrameType::FinishServer, payload.clone());
+        let payload = [1, 2, 3];
+        let framed = prepend_frame(FrameType::FinishServer, &payload);
         let ptr_base = framed.as_ptr();
         let (_ft, slice) = split_frame(&framed).unwrap();
         let ptr_slice = slice.as_ptr();
@@ -200,7 +211,7 @@ mod tests {
     proptest! {
         #[test]
         fn prop_round_trip(data in prop::collection::vec(any::<u8>(), 0..128)) {
-            let framed = prepend_frame(FrameType::Accept, data.clone());
+            let framed = prepend_frame(FrameType::Accept, &data);
             let (ty, body) = split_frame(&framed).unwrap();
             prop_assert_eq!(ty, FrameType::Accept);
             prop_assert_eq!(body, &data[..]);

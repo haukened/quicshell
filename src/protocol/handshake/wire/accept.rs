@@ -1,14 +1,25 @@
-//! Wire encoding for ACCEPT (stubs)
+//! Wire encoding for `ACCEPT` (stubs)
 
-use super::frame::{prepend_frame, split_frame, FrameType};
-use crate::core::cbor::{from_cbor, to_cbor, CodecError};
+use super::frame::{FrameType, prepend_frame, split_frame};
+use crate::core::cbor::{CodecError, from_cbor, to_cbor};
 use crate::domain::handshake::Accept;
 
+/// Encode an `ACCEPT` frame.
+///
+/// # Errors
+///
+/// Returns any CBOR serialization errors.
 pub fn encode_wire_accept(a: &Accept) -> Result<Vec<u8>, CodecError> {
     let cbor = to_cbor(a)?;
-    Ok(prepend_frame(FrameType::Accept, cbor))
+    Ok(prepend_frame(FrameType::Accept, &cbor))
 }
 
+/// Decode an `ACCEPT` frame from raw bytes.
+///
+/// # Errors
+///
+/// * Returns an error if the frame type is not `ACCEPT`.
+/// * Returns CBOR decoding errors.
 pub fn decode_wire_accept(bytes: &[u8]) -> Result<Accept, CodecError> {
     let (ft, payload) = split_frame(bytes)?;
     if ft != FrameType::Accept {
@@ -23,6 +34,11 @@ pub fn decode_wire_accept(bytes: &[u8]) -> Result<Accept, CodecError> {
 ///
 /// The `pad` field MUST be excluded from the transcript per ADR-0006 so
 /// transcript stability is not affected by variable-length padding.
+/// Encode an `ACCEPT` message for transcript hashing (padding stripped).
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_transcript_accept(a: &Accept) -> Result<Vec<u8>, CodecError> {
     let mut tmp = a.clone();
     tmp.pad = None;
@@ -61,7 +77,7 @@ mod tests {
         // Produce raw CBOR for Accept
         let cbor = to_cbor(&a).expect("cbor encode");
         // Wrap with an incorrect frame type (e.g., Hello if distinct)
-        let wrong = prepend_frame(FrameType::Hello, cbor);
+        let wrong = prepend_frame(FrameType::Hello, &cbor);
         let err = decode_wire_accept(&wrong).expect_err("must fail on wrong frame type");
         let msg = format!("{err}");
         assert!(

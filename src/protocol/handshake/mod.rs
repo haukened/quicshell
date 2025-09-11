@@ -1,2 +1,2 @@
-pub mod wire;
 pub mod transcript;
+pub mod wire;

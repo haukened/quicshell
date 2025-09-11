@@ -1,3 +1,3 @@
-pub mod cbor;
+pub mod lib;
 
-pub use cbor::{to_cbor, from_cbor, CodecError};
+pub use lib::{CodecError, from_cbor, to_cbor};

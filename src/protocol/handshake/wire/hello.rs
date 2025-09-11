@@ -1,16 +1,25 @@
-//! Wire encoding for HELLO (control-plane)
+//! Wire encoding for `HELLO` (control-plane)
 
-use super::frame::{prepend_frame, split_frame, FrameType};
-use crate::core::cbor::{from_cbor, to_cbor, CodecError}; // update to core::cbor if you rename
+use super::frame::{FrameType, prepend_frame, split_frame};
+use crate::core::cbor::{CodecError, from_cbor, to_cbor}; // update to core::cbor if you rename
 use crate::domain::handshake::Hello;
 
-/// Encode a HELLO for the wire: [type:1][canonical CBOR payload]
+/// Encode a `HELLO` for the wire: `[type:1][canonical CBOR payload]`
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_wire_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
     let cbor = to_cbor(h)?; // canonical by design
-    Ok(prepend_frame(FrameType::Hello, cbor))
+    Ok(prepend_frame(FrameType::Hello, &cbor))
 }
 
-/// Decode a HELLO from the wire (strict + canonical enforced by from_cbor)
+/// Decode a `HELLO` from the wire (strict + canonical enforced by `from_cbor`).
+///
+/// # Errors
+///
+/// * Returns an error if the frame type is not `HELLO`.
+/// * Returns CBOR decoding errors.
 pub fn decode_wire_hello(bytes: &[u8]) -> Result<Hello, CodecError> {
     let (ft, payload) = split_frame(bytes)?;
     if ft != FrameType::Hello {
@@ -21,7 +30,11 @@ pub fn decode_wire_hello(bytes: &[u8]) -> Result<Hello, CodecError> {
     from_cbor(payload)
 }
 
-/// Transcript encoding: CBOR of HELLO with pad stripped
+/// Transcript encoding: CBOR of `HELLO` with pad stripped.
+///
+/// # Errors
+///
+/// Returns CBOR serialization errors.
 pub fn encode_transcript_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
     let mut tmp = h.clone();
     tmp.pad = None;
@@ -171,8 +184,7 @@ mod tests {
         // Allow generous upper bound (adjust if CI environment requires)
         assert!(
             elapsed.as_secs_f64() < 0.75,
-            "encoding seems unexpectedly slow: {:?}",
-            elapsed
+            "encoding seems unexpectedly slow: {elapsed:?}"
         );
     }
 }
