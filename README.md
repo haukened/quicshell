@@ -1,3 +1,8 @@
+[![GitHub License](https://img.shields.io/github/license/haukened/quicshell?color=blue)](LICENSE)
+[![Static Badge](https://img.shields.io/badge/TRL-3-red)](https://en.wikipedia.org/wiki/Technology_readiness_level)
+[![CodeFactor](https://www.codefactor.io/repository/github/haukened/quicshell/badge)](https://www.codefactor.io/repository/github/haukened/quicshell)
+
+
 # QuicShell (qsh)
 
 qsh is a modern secure remote shell, designed as a clean successor to SSHv2. The project is in the design & early implementation phase; this README is intentionally minimal and aimed at future users (not contributors).
