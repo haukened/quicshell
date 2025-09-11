@@ -19,3 +19,17 @@ zeroize = "1.8.1"
 
 [dev-dependencies]
 proptest = "1.7.0"
+
+[lib]
+name = "quicshell"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "qsh"
+path = "src/bin/qsh.rs"
+
+[[bin]]
+name = "qshd"
+path = "src/bin/qshd.rs"
+
