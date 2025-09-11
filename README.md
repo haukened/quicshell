@@ -1,7 +1,6 @@
 [![GitHub License](https://img.shields.io/github/license/haukened/quicshell?color=blue)](LICENSE)
 [![Static Badge](https://img.shields.io/badge/TRL-3-red)](https://en.wikipedia.org/wiki/Technology_readiness_level)
 [![Build](https://github.com/haukened/quicshell/actions/workflows/build.yaml/badge.svg)](https://github.com/haukened/quicshell/actions/workflows/build.yaml)
-[![CodeFactor](https://www.codefactor.io/repository/github/haukened/quicshell/badge)](https://www.codefactor.io/repository/github/haukened/quicshell)
 [![Coverage Status](https://coveralls.io/repos/github/haukened/quicshell/badge.svg?branch=main)](https://coveralls.io/github/haukened/quicshell?branch=main)
 
 # QuicShell (qsh)
