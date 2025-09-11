@@ -15,6 +15,9 @@ pub fn encode_wire_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
 }
 
 /// Decode a `HELLO` from the wire (strict + canonical enforced by `from_cbor`).
+/// This does NOT perform validation beyond structural `CBOR` checks.
+/// Callers must call `validate()` on the resulting `Hello` object to ensure
+/// it meets all protocol requirements.
 ///
 /// # Errors
 ///

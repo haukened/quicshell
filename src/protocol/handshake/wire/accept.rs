@@ -15,6 +15,9 @@ pub fn encode_wire_accept(a: &Accept) -> Result<Vec<u8>, CodecError> {
 }
 
 /// Decode an `ACCEPT` frame from raw bytes.
+/// This does NOT perform validation beyond structural `CBOR` checks.
+/// Callers must call `validate()` on the resulting `Accept` object to ensure
+/// it meets all protocol requirements.
 ///
 /// # Errors
 ///

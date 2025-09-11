@@ -15,6 +15,9 @@ pub fn encode_wire_finish_client(fc: &FinishClient) -> Result<Vec<u8>, CodecErro
 }
 
 /// Decode a `FINISH_CLIENT` frame.
+/// This does NOT perform validation beyond structural `CBOR` checks.
+/// Callers must call `validate()` on the resulting `FinishClient` object to ensure
+/// it meets all protocol requirements.
 ///
 /// # Errors
 ///
@@ -44,6 +47,9 @@ pub fn encode_wire_finish_server(fs: &FinishServer) -> Result<Vec<u8>, CodecErro
 }
 
 /// Decode a `FINISH_SERVER` frame.
+/// This does NOT perform validation beyond structural `CBOR` checks.
+/// Callers must call `validate()` on the resulting `FinishServer` object to ensure
+/// it meets all protocol requirements.
 ///
 /// # Errors
 ///
