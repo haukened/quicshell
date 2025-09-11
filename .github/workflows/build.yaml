@@ -3,12 +3,12 @@ name: Build
 on:
   push:
     branches: [ "main", "develop" ]
+    paths-ignore:
+      - 'README.md'
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
     branches: [ "main", "develop" ]
-  paths-ignore:
-    - 'README.md'
-    - "LICENSE"
-    - ".gitignore"
 
 env:
   CARGO_TERM_COLOR: always
