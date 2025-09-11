@@ -183,6 +183,20 @@ transcript_hash = SHA-384( canon_cbor(HELLO_no_pad) ||
 Padding excluded. ALPN token and transport (QUIC vs TCP) affect context via distinct outer conditions and are thereby bound. Unknown keys (ignored semantically) still appear in canonical CBOR and are thus bound.
 FINISH_SERVER is excluded from the transcript hash by design to avoid circular dependencies with the confirm tag computation and because its fields (server_confirm plus optional ticket/padding) carry no additional identity or negotiation material. All security-relevant negotiation inputs are finalized prior to FINISH_SERVER.
 
+#### 5.2.1 Why a transcript? Value & threat model
+
+The transcript is the handshake’s "receipt": a deterministic running hash (SHA‑384) over the **exact** bytes of HELLO, ACCEPT, and FINISH_CLIENT (with padding removed). It adds concrete security and operational value:
+
+- **Integrity binding of all decisions.** Any bit flipped in those messages (keys, nonces, capabilities, ticket hints, unknown-but-present keys) changes the transcript hash. Confirm tags and all traffic keys are derived *from* this hash, so a peer cannot alter handshake inputs without detection.
+- **Interoperability by construction.** Using **canonical CBOR** ensures that independent implementations (Rust/Go/C, big/little endian, different CBOR libs) produce the *same* bytes for the *same* message → the same transcript. This prevents “soft forks” caused by harmless-looking encoding differences.
+- **Privacy without security loss.** Optional `pad` is stripped before hashing, so cover traffic does not perturb the transcript or keys. Padding still rides on the wire (for traffic shaping) but is cryptographically irrelevant.
+- **Downgrade and context binding.** The hash covers every field that carries security meaning (e.g., hybrid KEM pubs, capability set, ticket params). Together with fixed ALPN tokens, this prevents silent downgrade-by-omission or reordering attacks.
+- **Clear AAD contract.** Confirm tags and per-frame AEADs authenticate the transcript **via AAD** rather than re‑serializing whole messages. The AAD includes a small context prefix, a frame‑type byte, and the current transcript hash, which is simple to implement and hard to misuse.
+- **Auditable & reproducible.** The transcript gives operators and test suites a stable, comparable artifact. Given (HELLO, ACCEPT, FINISH_CLIENT), you can recompute `th` to verify a session’s cryptographic state and generate robust test vectors.
+- **Forward‑compat safety net.** Even keys that v1 **ignores semantically** (unknown fields) are still encoded in canonical CBOR and therefore **bound** by the transcript. Future versions can start using such fields without creating gaps in v1 security.
+
+Non‑goals: the transcript is **not** a log of all frames, a replay cache, or a place to smuggle policy. It is a small, deterministic hash that other mechanisms (HKDF, AEAD, confirm tags) depend on.
+
 Key / length constants (normative):
 * `L_app` = 32 bytes (application root secret length)
 * Export interface derives outputs directly from `app_secret` per request (no persistent `export_secret`).
