@@ -3,6 +3,10 @@
 [![Build](https://github.com/haukened/quicshell/actions/workflows/build.yaml/badge.svg)](https://github.com/haukened/quicshell/actions/workflows/build.yaml)
 [![Codacy Quality Badge](https://app.codacy.com/project/badge/Grade/3115454a626a4b7c80cc524a91b964f1)](https://app.codacy.com/gh/haukened/quicshell/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Codacy Coverage Badge](https://app.codacy.com/project/badge/Coverage/3115454a626a4b7c80cc524a91b964f1)](https://app.codacy.com/gh/haukened/quicshell/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)
+![Dynamic TOML Badge](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhaukened%2Fquicshell%2Frefs%2Fheads%2Fmain%2FCargo.toml&query=%24.package.edition&logo=rust&label=Edition&color=4bb543)
+![GitHub last commit](https://img.shields.io/github/last-commit/haukened/quicshell)
+
+
 
 # QuicShell (qsh)
 
