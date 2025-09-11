@@ -1,6 +1,7 @@
 [![GitHub License](https://img.shields.io/github/license/haukened/quicshell?color=blue)](LICENSE)
 [![Static Badge](https://img.shields.io/badge/TRL-3-red)](https://en.wikipedia.org/wiki/Technology_readiness_level)
 [![Build](https://github.com/haukened/quicshell/actions/workflows/build.yaml/badge.svg)](https://github.com/haukened/quicshell/actions/workflows/build.yaml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/3115454a626a4b7c80cc524a91b964f1)](https://app.codacy.com/gh/haukened/quicshell/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Coverage Status](https://coveralls.io/repos/github/haukened/quicshell/badge.svg?branch=main)](https://coveralls.io/github/haukened/quicshell?branch=main)
 
 # QuicShell (qsh)
