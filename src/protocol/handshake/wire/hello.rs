@@ -1,8 +1,8 @@
 //! Wire encoding for HELLO (control-plane)
 
-use crate::core::cbor::{to_cbor, from_cbor, CodecError}; // update to core::cbor if you rename
+use super::frame::{prepend_frame, split_frame, FrameType};
+use crate::core::cbor::{from_cbor, to_cbor, CodecError}; // update to core::cbor if you rename
 use crate::domain::handshake::Hello;
-use super::frame::{FrameType, prepend_frame, split_frame};
 
 /// Encode a HELLO for the wire: [type:1][canonical CBOR payload]
 pub fn encode_wire_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
@@ -14,10 +14,9 @@ pub fn encode_wire_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
 pub fn decode_wire_hello(bytes: &[u8]) -> Result<Hello, CodecError> {
     let (ft, payload) = split_frame(bytes)?;
     if ft != FrameType::Hello {
-        return Err(CodecError::De(ciborium::de::Error::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "expected HELLO frame",
-        ))));
+        return Err(CodecError::De(ciborium::de::Error::Io(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "expected HELLO frame"),
+        )));
     }
     from_cbor(payload)
 }
@@ -33,8 +32,41 @@ pub fn encode_transcript_hello(h: &Hello) -> Result<Vec<u8>, CodecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
     use crate::test_support::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn encode_hello() {
+        let h = mk_hello();
+        let encoded = encode_wire_hello(&h).expect("encoding should succeed");
+        let (ft, payload) = split_frame(&encoded).expect("should split frame");
+        assert_eq!(ft, FrameType::Hello, "frame type must be HELLO");
+        let decoded: Hello = from_cbor(payload).expect("decode should succeed");
+        assert_eq!(decoded, h, "decoded Hello must match original");
+    }
+
+    #[test]
+    fn decode_hello() {
+        let h = mk_hello();
+        let encoded = encode_wire_hello(&h).expect("encoding should succeed");
+        let decoded = decode_wire_hello(&encoded).expect("decoding should succeed");
+        assert_eq!(decoded, h, "decoded Hello must match original");
+    }
+
+    #[test]
+    fn decode_hello_wrong_type_fails() {
+        let h = mk_hello();
+        let mut encoded = encode_wire_hello(&h).expect("encoding should succeed");
+        // Corrupt the frame type to something else
+        if !encoded.is_empty() {
+            encoded[0] = FrameType::Accept as u8;
+        }
+        let result = decode_wire_hello(&encoded);
+        assert!(
+            result.is_err(),
+            "decoding with wrong frame type should fail"
+        );
+    }
 
     /// Helper to build a Hello with a specific pad while relying on Default for other fields.
     /// Adjust if Hello does not implement Default or has mandatory non-defaultable fields.
@@ -51,9 +83,16 @@ mod tests {
         let encoded = encode_transcript_hello(&h).expect("encoding should succeed");
         // Decode back to verify pad is absent (None) in transcript form.
         let decoded: Hello = from_cbor(&encoded).expect("decode should succeed");
-        assert!(decoded.pad.is_none(), "pad field must be stripped in transcript encoding");
+        assert!(
+            decoded.pad.is_none(),
+            "pad field must be stripped in transcript encoding"
+        );
         // Original value must remain intact (function must not mutate input)
-        assert_eq!(h.pad.as_ref(), Some(&original_pad), "original Hello mutated unexpectedly");
+        assert_eq!(
+            h.pad.as_ref(),
+            Some(&original_pad),
+            "original Hello mutated unexpectedly"
+        );
     }
 
     #[test]
@@ -61,7 +100,10 @@ mod tests {
         let h = hello_with_pad(None);
         let first = encode_transcript_hello(&h).unwrap();
         let second = encode_transcript_hello(&h).unwrap();
-        assert_eq!(first, second, "encoding with no pad should be stable/idempotent");
+        assert_eq!(
+            first, second,
+            "encoding with no pad should be stable/idempotent"
+        );
     }
 
     #[test]
@@ -127,6 +169,10 @@ mod tests {
         }
         let elapsed = start.elapsed();
         // Allow generous upper bound (adjust if CI environment requires)
-        assert!(elapsed.as_secs_f64() < 0.75, "encoding seems unexpectedly slow: {:?}", elapsed);
+        assert!(
+            elapsed.as_secs_f64() < 0.75,
+            "encoding seems unexpectedly slow: {:?}",
+            elapsed
+        );
     }
 }
