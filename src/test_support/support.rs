@@ -1,14 +1,20 @@
 #![allow(dead_code)]
-#![cfg(test)]
+#![allow(unused_imports)]
+#![allow(clippy::missing_errors_doc)]
+#[allow(clippy::wildcard_imports)]
 use crate::domain::handshake::*;
 use std::io::Cursor;
 
 /// Simple byte filler
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn bytes_of(b: u8, len: usize) -> Vec<u8> {
     vec![b; len]
 }
 
 /// CBOR helpers for tests (deterministic by default)
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn to_vec<T: serde::Serialize>(v: &T) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
     let mut buf = Vec::new();
     ciborium::ser::into_writer(v, &mut buf)?;
@@ -21,16 +27,22 @@ pub fn from_slice<T: for<'de> serde::Deserialize<'de>>(
 }
 
 /// Capability helper
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_cap(s: &str) -> Capability {
     Capability::parse(s).unwrap()
 }
 
 /// 32-byte zeroed nonce
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_nonce() -> Nonce32 {
     Nonce32([0u8; 32])
 }
 
 /// Construct dummy KEM values (client/server ephemeral + ciphertext)
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
     (
         KemClientEphemeral {
@@ -48,6 +60,8 @@ pub fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
 }
 
 /// Construct dummy keypairs + hybrid sig
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_keys() -> (Box<RawKeys>, Box<HybridSig>) {
     (
         Box::new(RawKeys {
@@ -62,6 +76,8 @@ pub fn mk_keys() -> (Box<RawKeys>, Box<HybridSig>) {
 }
 
 /// Construct a dummy Hello with EXEC+TTY and zeroed nonce/kem
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_hello() -> Hello {
     let (kem_c, _, _) = mk_kem();
     let caps = vec![mk_cap("EXEC"), mk_cap("TTY")];
@@ -69,13 +85,17 @@ pub fn mk_hello() -> Hello {
 }
 
 /// Construct a dummy Accept with zeroed kem, nonce, and one dummy cert
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_accept() -> Accept {
     let (_, kem_s, _) = mk_kem();
     let certs = vec![vec![0u8; 8]];
     Accept::new(kem_s, certs, mk_nonce(), None, None, None).unwrap()
 }
 
-/// Construct a dummy `FinishClient` with dummy KEM ciphertext and raw keys+sig
+/// Construct a dummy `FinishClient` with dummy KEM ciphertext and raw keys+sig+
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_finish_client() -> FinishClient {
     let (_, _, kem_ct) = mk_kem();
     let (raw, sig) = mk_keys();
@@ -89,6 +109,8 @@ pub fn mk_finish_client() -> FinishClient {
 }
 
 /// Construct a dummy `FinishServer` with confirm tag and no ticket
+#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::must_use_candidate)]
 pub fn mk_finish_server() -> FinishServer {
     FinishServer::new(vec![0u8; 16], None, None).unwrap()
 }

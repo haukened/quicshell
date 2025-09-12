@@ -4,4 +4,4 @@ pub mod core;
 pub mod domain;
 pub mod ports;
 pub mod protocol;
-mod test_support;
+pub mod test_support;

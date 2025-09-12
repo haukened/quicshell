@@ -1,7 +1,12 @@
 // integration and RTT tests for handshake domain types
 // unit tests live with the types they test
 
-use quicshell::domain::handshake::*;
+use quicshell::{
+    domain::handshake::*,
+    test_support::{
+        bytes_of, mk_accept, mk_cap, mk_finish_client, mk_hello, mk_kem, mk_keys, mk_nonce,
+    },
+};
 use std::io::Cursor;
 
 // Test-local CBOR helpers using ciborium (deterministic by default)
@@ -53,48 +58,6 @@ enum UAuthWire<'a> {
     },
 }
 
-fn bytes_of(n: u8, len: usize) -> Vec<u8> {
-    vec![n; len]
-}
-
-fn mk_cap(s: &str) -> Capability {
-    Capability::parse(s).unwrap()
-}
-
-fn mk_kem() -> (KemClientEphemeral, KemServerEphemeral, KemCiphertexts) {
-    let x = X25519Pub([0; 32]);
-    let m = Mlkem768Pub([0; 1184]);
-    let ct = Mlkem768Ciphertext([0; 1088]);
-    (
-        KemClientEphemeral {
-            x25519_pub: x.clone(),
-            mlkem_pub: m.clone(),
-        },
-        KemServerEphemeral {
-            x25519_pub: x,
-            mlkem_pub: m,
-        },
-        KemCiphertexts { mlkem_ct: ct },
-    )
-}
-
-fn mk_keys() -> (RawKeys, HybridSig) {
-    (
-        RawKeys {
-            ed25519_pub: Ed25519Pub([0; 32]),
-            mldsa44_pub: Mldsa44Pub([0; 1312]),
-        },
-        HybridSig {
-            ed25519: Ed25519Sig([0; 64]),
-            mldsa44: Mldsa44Sig([0; 2420]),
-        },
-    )
-}
-
-fn mk_nonce() -> Nonce32 {
-    Nonce32([0; 32])
-}
-
 #[test]
 fn public_construct_valid_hello() {
     let (kem_c, _, _) = mk_kem();
@@ -104,34 +67,9 @@ fn public_construct_valid_hello() {
 
 #[test]
 fn roundtrip_serde_hello_accept_finish() {
-    let (kem_c, kem_s, kem_ct) = mk_kem();
-    let hello = Hello::new(
-        kem_c,
-        mk_nonce(),
-        vec![mk_cap("EXEC"), mk_cap("TTY")],
-        Some(bytes_of(1, 4)),
-    )
-    .unwrap();
-    let accept = Accept::new(
-        kem_s,
-        vec![bytes_of(2, 2)],
-        mk_nonce(),
-        None,
-        None,
-        Some(bytes_of(3, 3)),
-    )
-    .unwrap();
-    let (raw_keys, sig) = mk_keys();
-    let finish_client = FinishClient::new(
-        kem_ct.clone(),
-        UserAuth::RawKeys {
-            raw_keys: Box::new(raw_keys),
-            sig: Box::new(sig),
-        },
-        bytes_of(4, 16),
-        Some(bytes_of(5, 1)),
-    )
-    .unwrap();
+    let hello = mk_hello();
+    let accept = mk_accept();
+    let finish_client = mk_finish_client();
     let finish_server =
         FinishServer::new(bytes_of(6, 16), Some(vec![7u8]), Some(bytes_of(8, 2))).unwrap();
 

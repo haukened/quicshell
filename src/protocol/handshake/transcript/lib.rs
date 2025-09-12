@@ -50,28 +50,40 @@ impl Transcript {
         out
     }
 
-    /// Feed HELLO (pad stripped) into the transcript.
+    /// Feed `HELLO` (pad stripped) into the transcript.
+    ///
+    /// # Errors
+    /// Returns `Err` if CBOR wire encoding of the `HELLO` message fails.
     pub fn push_hello(&mut self, hello: &Hello) -> Result<(), TranscriptError> {
         let bytes = encode_transcript_hello(hello)?;
         self.hasher.update(&bytes);
         Ok(())
     }
 
-    /// Feed ACCEPT (pad stripped) into the transcript.
+    /// Feed `ACCEPT` (pad stripped) into the transcript.
+    ///
+    /// # Errors
+    /// Returns `Err` if CBOR wire encoding of the `ACCEPT` message fails.
     pub fn push_accept(&mut self, accept: &Accept) -> Result<(), TranscriptError> {
         let bytes = encode_transcript_accept(accept)?;
         self.hasher.update(&bytes);
         Ok(())
     }
 
-    /// Feed FINISH_CLIENT (pad stripped) into the transcript.
+    /// Feed `FINISH_CLIENT` (pad stripped) into the transcript.
+    ///
+    /// # Errors
+    /// Returns `Err` if CBOR wire encoding of the `FINISH_CLIENT` message fails.
     pub fn push_finish_client(&mut self, fc: &FinishClient) -> Result<(), TranscriptError> {
         let bytes = encode_transcript_finish_client(fc)?;
         self.hasher.update(&bytes);
         Ok(())
     }
 
-    /// Feed FINISH_SERVER (pad stripped) into the transcript.
+    /// Feed `FINISH_SERVER` (pad stripped) into the transcript.
+    ///
+    /// # Errors
+    /// Returns `Err` if CBOR wire encoding of the `FINISH_SERVER` message fails.
     pub fn push_finish_server(&mut self, fs: &FinishServer) -> Result<(), TranscriptError> {
         let bytes = encode_transcript_finish_server(fs)?;
         self.hasher.update(&bytes);
@@ -113,6 +125,12 @@ impl Transcript {
         // transcript hash
         out[5..].copy_from_slice(&self.th());
         out
+    }
+}
+
+impl Default for Transcript {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
