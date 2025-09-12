@@ -31,11 +31,13 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
+      uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd
+      with:
+        tool: cargo-llvm-cov
     - name: Generate coverage report
       run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
     - name: Run codacy-coverage-reporter
-      uses: codacy/codacy-coverage-reporter-action@v1.3.0
+      uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699
       with:
         project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
         coverage-reports: ./lcov.info
