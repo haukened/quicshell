@@ -13,7 +13,15 @@ It reflects both the **protocol specification** and the **Rust reference impleme
   - [x] Hybrid KEM (X25519 + ML-KEM-768) domain types (crypto ops/integration pending)
   - [x] Hybrid signatures (Ed25519 + ML-DSA-44) domain types (verification integration pending)
   - [x] HKDF-SHA-384 label scaffolding (transcript / constant usage present; full key schedule wiring TBD)
-  - [ ] XChaCha20-Poly1305 for data + confirm tags (AEAD port + impl not yet integrated)
+  - [ ] XChaCha20-Poly1305 for data + confirm tags
+    - [x] AEAD port (`AeadSeal` trait, key/nonce newtypes)
+    - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
+    - [ ] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
+    - [ ] Confirm tag sealing/verification using transcript AAD helpers
+    - [ ] Directional nonce/sequence manager with reuse/overflow detection
+    - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
+    - [ ] Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)
+    - [ ] Integration tests: full handshake -> encrypted payload + confirm tags
 - [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
 - [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
 - [ ] Per-direction rekey (1 MiB / 30 s)
