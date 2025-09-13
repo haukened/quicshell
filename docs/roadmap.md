@@ -1,3 +1,5 @@
+markdown
+// filepath: /Users/David.Haukeness/dev/quicshell/docs/roadmap.md
 # QuicShell Roadmap
 
 This roadmap outlines the anticipated development path for **qsh** (QuicShell).  
@@ -7,66 +9,66 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 
 ## Stage 1: Foundation (MVP) — v1 Scope
 
-- [ ] Core handshake (deterministic CBOR)  
-  - Hybrid KEM (X25519 + ML-KEM-768)  
-  - Hybrid signatures (Ed25519 + ML-DSA-44)  
-  - HKDF-SHA-384 labels: hs, app, exp, confirm, ch root, ch rekey  
-  - XChaCha20-Poly1305 for data + confirm tags  
-- [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams  
-- [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)  
-- [ ] Per-direction rekey (1 MiB / 30 s)  
-- [ ] Environment sanitization & limits  
-- [ ] Adaptive padding + 30 s encrypted keepalives  
-- [ ] Error code registry & escalation rules  
-- [ ] Exporter interface  
-- [ ] Logging modes (privacy-minimal, standard, enterprise)  
+- [x] Core handshake (deterministic CBOR: HELLO / ACCEPT / FINISH*, transcript hashing, pad stripping)
+  - [x] Hybrid KEM (X25519 + ML-KEM-768) domain types (crypto ops/integration pending)
+  - [x] Hybrid signatures (Ed25519 + ML-DSA-44) domain types (verification integration pending)
+  - [x] HKDF-SHA-384 label scaffolding (transcript / constant usage present; full key schedule wiring TBD)
+  - [ ] XChaCha20-Poly1305 for data + confirm tags (AEAD port + impl not yet integrated)
+- [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
+- [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
+- [ ] Per-direction rekey (1 MiB / 30 s)
+- [ ] Environment sanitization & limits
+- [~] Adaptive padding (handshake message pad field & stripping implemented; keepalive cadence not yet)
+- [ ] Error code registry & escalation rules
+- [ ] Exporter interface
+- [ ] Logging modes (privacy-minimal, standard, enterprise)
 
 ---
 
 ## Stage 2: Fallback & Multiplexing
 
-- [ ] TCP/TLS fallback (ALPN `qsht/1`) with QUIC-varint mux  
-- [ ] Channel: QFTP (formerly SFTP) minimal file protocol (single channel multiplex)  
-- [ ] Enhanced flow control tuning  
+- [ ] TCP/TLS fallback (ALPN `qsht/1`) with QUIC-varint mux
+- [ ] Channel: QFTP (formerly SFTP) minimal file protocol (single channel multiplex)
+- [ ] Enhanced flow control tuning
 
 ---
 
 ## Stage 3: Advanced Features
 
-- [ ] Channel: PFWD (port forwarding)  
-- [ ] Resumption tickets (single-use, 10 min default, fresh KEM)  
-- [ ] Host key rotation (signed rotation object, grace overlap)  
-- [ ] Audit logs (per-channel MAC chain)  
-- [ ] Optional `revocation_policy` advisory hint ("none"|"soft"|"hard")  
+- [ ] Channel: PFWD (port forwarding)
+- [ ] Resumption tickets (single-use, 10 min default, fresh KEM)
+- [ ] Host key rotation (signed rotation object, grace overlap)
+- [ ] Audit logs (per-channel MAC chain)
+- [ ] Optional `revocation_policy` advisory hint ("none"|"soft"|"hard")
 
 ---
 
 ## Stage 4: Ecosystem & Spec Work
 
-- [ ] **Formal CDDL schemas** for all handshake/control messages  
-- [ ] **Interop test vectors** (Rust <-> other languages)  
-- [ ] **State machine diagrams** for handshake and channel lifecycles  
-- [ ] **Wire captures** with annotated transcripts  
-- [ ] **Draft I-D style spec** for community review  
+- [ ] **Formal CDDL schemas** for all handshake/control messages
+- [ ] **Interop test vectors** (Rust <-> other languages)
+- [ ] **State machine diagrams** for handshake and channel lifecycles
+- [ ] **Wire captures** with annotated transcripts
+- [ ] **Draft I-D style spec** for community review
 
 ---
 
 ## Stage 5: Usability & Hardening
 
-- [ ] CLI tooling (`qsh`, `qshd`)  
-- [ ] Example configs & quickstart image  
-- [ ] Fuzzing priority: handshake CBOR, channel frames, rekey logic, TCP mux  
-- [ ] Memory / timing audits (constant-time only for KEM + signatures)  
-- [ ] Post-quantum only mode (new ALPN)  
+- [ ] CLI tooling (`qsh`, `qshd`)
+- [ ] Example configs & quickstart image
+- [ ] Fuzzing priority: handshake CBOR, channel frames, rekey logic, TCP mux
+- [ ] Memory / timing audits (constant-time only for KEM + signatures)
+- [ ] Post-quantum only mode (new ALPN)
 
 ---
 
 ## Stretch Goals
 
-- [ ] **HTTP/2 CONNECT / WebSocket encapsulation** for ultra-restricted networks  
-- [ ] **Minimal embedded server** for IoT environments  
-- [ ] **GUI client** with session recording / replay  
-- [ ] **Transparency log** for host key discovery and pinning proofs  
+- [ ] **HTTP/2 CONNECT / WebSocket encapsulation** for ultra-restricted networks
+- [ ] **Minimal embedded server** for IoT environments
+- [ ] **GUI client** with session recording / replay
+- [ ] **Transparency log** for host key discovery and pinning proofs
 
 ---
 
@@ -83,4 +85,4 @@ QuicShell is designed to be:
 
 ## Author
 
-Maintained by [@haukened](https://github.com/haukened) (David Haukeness).  
+Maintained by [@haukened](https://github.com/haukened) (David Haukeness).
