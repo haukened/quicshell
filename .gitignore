@@ -28,3 +28,6 @@ target
 
 # Added by cargo
 /target
+
+# log files
+*.log
