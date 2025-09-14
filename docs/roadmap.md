@@ -22,6 +22,12 @@ It reflects both the **protocol specification** and the **Rust reference impleme
     - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
     - [ ] Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)
     - [ ] Integration tests: full handshake -> encrypted payload + confirm tags
+    - [x] Handshake FSM skeleton (state enum, role checks, transitions)
+    - [x] FSM guards (role crossover prevention, no regression, enforced path)
+    - [ ] FSM transcript integration (absorb canonical CBOR, pad-stripped)
+    - [ ] FSM confirm-tag verification via AEAD adapter
+    - [ ] FSM timeout / cancellation handling
+    - [ ] FSM rekey orchestration (propose/ack/cutover states)
 - [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
 - [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
 - [ ] Per-direction rekey (1 MiB / 30 s)
