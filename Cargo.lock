@@ -615,6 +615,7 @@ dependencies = [
  "hkdf",
  "proptest",
  "quinn",
+ "rand_chacha",
  "serde",
  "sha2",
  "thiserror 2.0.16",

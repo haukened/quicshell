@@ -1,5 +1,6 @@
 use crate::domain::handshake::errors::HandshakeError;
 use crate::domain::handshake::params::NONCE_LEN;
+use aead::rand_core;
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,14 @@ impl fmt::Debug for Nonce32 {
 }
 
 impl Nonce32 {
+    /// Securely generate a random nonce using the provided CSPRNG.
+    #[must_use]
+    pub fn random<R: rand_core::CryptoRng + rand_core::RngCore>(rng: &mut R) -> Self {
+        let mut arr = [0u8; NONCE_LEN];
+        rng.fill_bytes(&mut arr);
+        Nonce32(arr)
+    }
+
     /// Access the inner byte array.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; NONCE_LEN] {
@@ -43,6 +52,7 @@ mod tests {
     use super::*;
     use crate::domain::handshake::errors::HandshakeError;
     use crate::domain::handshake::params::NONCE_LEN;
+    use aead::rand_core::{CryptoRng, RngCore};
 
     #[test]
     fn nonce32_from_bytes_success_and_error() {
@@ -66,5 +76,59 @@ mod tests {
             }
             _ => panic!("unexpected {err:?}"),
         }
+    }
+
+    // Minimal zero RNG for deterministic, non-random test output.
+    struct ZeroRng;
+    impl RngCore for ZeroRng {
+        fn next_u32(&mut self) -> u32 {
+            0
+        }
+        fn next_u64(&mut self) -> u64 {
+            0
+        }
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for b in dest.iter_mut() {
+                *b = 0;
+            }
+        }
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), aead::rand_core::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
+    impl CryptoRng for ZeroRng {}
+
+    #[test]
+    fn zrng_works() {
+        let mut rng = ZeroRng;
+        let mut buf = [1u8; 16];
+        rng.fill_bytes(&mut buf);
+        assert_eq!(buf, [0u8; 16], "ZeroRng should fill with zeros");
+        rng.try_fill_bytes(&mut buf).unwrap();
+        assert_eq!(buf, [0u8; 16], "ZeroRng should fill with zeros");
+        let n1 = rng.next_u32();
+        let n2 = rng.next_u64();
+        assert_eq!(n1, 0);
+        assert_eq!(n2, 0);
+    }
+
+    #[test]
+    fn nonce32_random_deterministic() {
+        let mut rng = ZeroRng;
+        let n1 = Nonce32::random(&mut rng);
+        let n2 = Nonce32::random(&mut rng);
+        assert_eq!(n1, n2, "ZeroRng should produce identical nonces");
+        assert_eq!(n1.as_bytes().len(), NONCE_LEN);
+    }
+
+    #[test]
+    fn nonce32_random() {
+        let mut rng = aead::rand_core::OsRng;
+        let n1 = Nonce32::random(&mut rng);
+        let n2 = Nonce32::random(&mut rng);
+        assert_ne!(n1, n2, "OsRng should produce different nonces");
+        assert_eq!(n1.as_bytes().len(), NONCE_LEN);
+        assert_eq!(n2.as_bytes().len(), NONCE_LEN);
     }
 }
