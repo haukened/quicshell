@@ -16,7 +16,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
   - [ ] XChaCha20-Poly1305 for data + confirm tags
     - [x] AEAD port (`AeadSeal` trait, key/nonce newtypes)
     - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
-    - [ ] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
+    - [x] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
     - [ ] Confirm tag sealing/verification using transcript AAD helpers
     - [ ] Directional nonce/sequence manager with reuse/overflow detection
     - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
