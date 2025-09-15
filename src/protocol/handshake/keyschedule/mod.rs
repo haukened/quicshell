@@ -10,13 +10,13 @@ const L_CLIENT_SALT: &[u8] = b"qsh v1 client write salt16";
 const L_SERVER_KEY: &[u8] = b"qsh v1 server write key";
 const L_SERVER_SALT: &[u8] = b"qsh v1 server write salt16";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectionKeys {
     pub key: AeadKey,
     pub salt: NonceSalt,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteKeys {
     pub client: DirectionKeys,
     pub server: DirectionKeys,

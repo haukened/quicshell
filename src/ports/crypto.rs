@@ -4,14 +4,14 @@ use zeroize::Zeroize;
 /// Length of the authentication tag in bytes.
 pub const AEAD_TAG_LEN: usize = 16;
 
-#[derive(Debug, Clone, Zeroize)]
+#[derive(Debug, Clone, Zeroize, PartialEq, Eq)]
 #[zeroize(drop)]
 pub struct AeadKey(pub [u8; 32]); // ChaCha20-Poly1305 key size
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NonceSalt(pub [u8; 16]); // XChaCha: 16B salt + 8B seq = 24B nonce
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Seq(pub u64); // per-direction counter
 
 /// Trait for in-place Authenticated Encryption with Associated Data (AEAD).
