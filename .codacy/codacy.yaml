@@ -1,3 +1,5 @@
+exclude_paths:
+    - test/**/*
 runtimes:
     - python@3.11.11
 tools:
