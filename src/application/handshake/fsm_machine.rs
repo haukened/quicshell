@@ -184,10 +184,9 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
             (Role::Server, HandshakeState::SentAccept, HandshakeEvent::ServerRecvFinishClient) => {
                 HandshakeState::GotFinishClient
             }
-            (Role::Client, HandshakeState::GotAccept, HandshakeEvent::ClientRecvFinishServer)
-            | (
+            (
                 Role::Client,
-                HandshakeState::SentFinishClient,
+                HandshakeState::GotAccept | HandshakeState::SentFinishClient,
                 HandshakeEvent::ClientRecvFinishServer,
             )
             | (
