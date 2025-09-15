@@ -1,4 +1,5 @@
 pub mod accept;
+pub mod adapter;
 pub mod finish;
 pub mod frame;
 pub mod hello;
