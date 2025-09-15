@@ -63,6 +63,7 @@ pub struct ChaChaAead;
 /// - This abstraction assumes the caller enforces nonce uniqueness through `seq`.
 impl AeadSeal for ChaChaAead {
     /// Encrypts `buf` in place, appends tag, returns ciphertext+tag length.
+    /// This is to seal data frames, not handshake confirm tags.
     /// # Errors
     /// Returns `AeadError::Internal` if encryption fails.
     fn seal_in_place(
@@ -81,6 +82,7 @@ impl AeadSeal for ChaChaAead {
     }
 
     /// Decrypts `buf` in place, removes tag.
+    /// This is to open data frames, not handshake confirm tags.
     /// # Errors
     /// Returns `AeadError::TagMismatch` if authentication fails.
     fn open_in_place(
@@ -95,6 +97,48 @@ impl AeadSeal for ChaChaAead {
         let nonce = make_nonce(salt, seq);
         cipher
             .decrypt_in_place(&nonce, aad, buf)
+            .map_err(|_| AeadError::TagMismatch)
+    }
+
+    /// Produce a detached 16-byte authentication tag over **empty plaintext** with the given AAD.
+    ///
+    /// This is intended for handshake **confirm tags** (e.g., `FINISH_CLIENT` / `FINISH_SERVER`)
+    /// where we need to authenticate the transcript via AAD without encrypting any payload.
+    ///
+    /// Do **not** use this for data frames—use `seal_in_place` instead.
+    fn seal_detached_tag(
+        &self,
+        key: &AeadKey,
+        salt: NonceSalt,
+        seq: Seq,
+        aad: &[u8],
+    ) -> Result<[u8; 16], AeadError> {
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&key.0));
+        let nonce = make_nonce(salt, seq);
+        let mut empty: [u8; 0] = [];
+        let tag = cipher
+            .encrypt_in_place_detached(&nonce, aad, &mut empty)
+            .map_err(|_| AeadError::Internal)?;
+        Ok(tag.into())
+    }
+
+    /// Verify a detached 16-byte authentication tag over **empty plaintext** with the given AAD.
+    ///
+    /// This is the counterpart to `seal_detached_tag` and should be used when verifying
+    /// handshake confirm tags. Returns `Ok(())` on success or `AeadError::TagMismatch` on failure.
+    fn open_detached_tag(
+        &self,
+        key: &AeadKey,
+        salt: NonceSalt,
+        seq: Seq,
+        aad: &[u8],
+        tag: &[u8; 16],
+    ) -> Result<(), AeadError> {
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&key.0));
+        let nonce = make_nonce(salt, seq);
+        let mut empty: [u8; 0] = [];
+        cipher
+            .decrypt_in_place_detached(&nonce, aad, &mut empty, tag.into())
             .map_err(|_| AeadError::TagMismatch)
     }
 }
@@ -182,6 +226,43 @@ mod tests {
         assert_eq!(
             p1, p2,
             "same nonce reused -> identical ciphertext (danger in real use)"
+        );
+    }
+
+    #[test]
+    fn detached_tag_round_trip() {
+        let a = ChaChaAead;
+        let tag = a
+            .seal_detached_tag(&key(), salt(), Seq(5), b"transcript-aad")
+            .expect("seal tag");
+        a.open_detached_tag(&key(), salt(), Seq(5), b"transcript-aad", &tag)
+            .expect("open tag");
+    }
+
+    #[test]
+    fn detached_tag_aad_mismatch_fails() {
+        let a = ChaChaAead;
+        let tag = a
+            .seal_detached_tag(&key(), salt(), Seq(6), b"aad-one")
+            .expect("seal tag");
+        let err = a
+            .open_detached_tag(&key(), salt(), Seq(6), b"aad-two", &tag)
+            .unwrap_err();
+        matches!(err, AeadError::TagMismatch);
+    }
+
+    #[test]
+    fn detached_tag_changes_with_nonce() {
+        let a = ChaChaAead;
+        let t1 = a
+            .seal_detached_tag(&key(), salt(), Seq(100), b"aad")
+            .expect("t1");
+        let t2 = a
+            .seal_detached_tag(&key(), salt(), Seq(101), b"aad")
+            .expect("t2");
+        assert_ne!(
+            t1, t2,
+            "different sequence numbers must yield different tags"
         );
     }
 }

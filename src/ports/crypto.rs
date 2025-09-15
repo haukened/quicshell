@@ -93,6 +93,37 @@ pub trait AeadSeal {
         aad: &[u8],
         buf: &mut Vec<u8>,
     ) -> Result<(), AeadError>;
+
+    /// Produce a detached authentication tag over **empty plaintext** with the given AAD.
+    ///
+    /// This is intended for handshake **confirm tags** (FINISH_*), where we authenticate
+    /// the transcript via AAD without encrypting any payload.
+    ///
+    /// Do **not** use this for data frames — use `seal_in_place` instead.
+    /// # Errors
+    /// Returns `AeadError::Internal` if encryption fails.
+    fn seal_detached_tag(
+        &self,
+        key: &AeadKey,
+        salt: NonceSalt,
+        seq: Seq,
+        aad: &[u8],
+    ) -> Result<[u8; AEAD_TAG_LEN], AeadError>;
+
+    /// Verify a detached authentication tag over **empty plaintext** with the given AAD.
+    ///
+    /// Counterpart to `seal_detached_tag` for handshake confirm verification.
+    /// Returns `Ok(())` on success or `AeadError::TagMismatch` on failure.
+    /// # Errors
+    /// Returns `AeadError::TagMismatch` if authentication fails.
+    fn open_detached_tag(
+        &self,
+        key: &AeadKey,
+        salt: NonceSalt,
+        seq: Seq,
+        aad: &[u8],
+        tag: &[u8; AEAD_TAG_LEN],
+    ) -> Result<(), AeadError>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -160,6 +191,49 @@ mod tests {
             buf.copy_from_slice(&plain);
             Ok(())
         }
+
+        fn seal_detached_tag(
+            &self,
+            _key: &AeadKey,
+            salt: NonceSalt,
+            seq: Seq,
+            aad: &[u8],
+        ) -> Result<[u8; AEAD_TAG_LEN], AeadError> {
+            if aad.is_empty() {
+                return Err(AeadError::Internal);
+            }
+            let mut ah: u8 = 0;
+            for b in aad {
+                ah = ah.wrapping_add(*b);
+            }
+            let k = seq.0 as u8 ^ salt.0[0] ^ ah;
+            let mut tag = [0u8; AEAD_TAG_LEN];
+            tag.fill(k);
+            Ok(tag)
+        }
+
+        fn open_detached_tag(
+            &self,
+            _key: &AeadKey,
+            salt: NonceSalt,
+            seq: Seq,
+            aad: &[u8],
+            tag: &[u8; AEAD_TAG_LEN],
+        ) -> Result<(), AeadError> {
+            if aad.is_empty() {
+                return Err(AeadError::Internal);
+            }
+            let mut ah: u8 = 0;
+            for b in aad {
+                ah = ah.wrapping_add(*b);
+            }
+            let k = seq.0 as u8 ^ salt.0[0] ^ ah;
+            if tag.iter().all(|t| *t == k) {
+                Ok(())
+            } else {
+                Err(AeadError::TagMismatch)
+            }
+        }
     }
 
     #[test]
@@ -217,5 +291,32 @@ mod tests {
             .open_in_place(&key, salt, seq, b"x", &mut data)
             .unwrap_err();
         matches!(err, AeadError::TagMismatch);
+    }
+
+    #[test]
+    fn detached_tag_round_trip() {
+        let a = DummyAead;
+        let key = AeadKey([7u8; 32]);
+        let salt = NonceSalt([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        let seq = Seq(42);
+        let aad = b"transcript-aad";
+        let tag = a.seal_detached_tag(&key, salt, seq, aad).expect("seal tag");
+        a.open_detached_tag(&key, salt, seq, aad, &tag)
+            .expect("open tag");
+    }
+
+    #[test]
+    fn detached_tag_aad_mismatch_fails() {
+        let a = DummyAead;
+        let key = AeadKey([7u8; 32]);
+        let salt = NonceSalt([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        let seq = Seq(7);
+        let tag = a
+            .seal_detached_tag(&key, salt, seq, b"A")
+            .expect("seal tag");
+        let err = a
+            .open_detached_tag(&key, salt, seq, b"B", &tag)
+            .unwrap_err();
+        matches!(err, AeadError::TagMismatch | AeadError::Internal);
     }
 }
