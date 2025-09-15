@@ -126,6 +126,33 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         }
     }
 
+    // Transition helpers extracted to keep `apply` concise (Codacy line limit)
+    fn client_transition(old: HandshakeState, ev: HandshakeEvent) -> Option<HandshakeState> {
+        use HandshakeEvent as E;
+        use HandshakeState as S;
+        match (old, ev) {
+            (S::Start, E::ClientSendHello) => Some(S::SentHello),
+            (S::SentHello, E::ClientRecvAccept) => Some(S::GotAccept),
+            (S::GotAccept, E::ClientSendFinishClient) => Some(S::SentFinishClient),
+            (S::GotAccept | S::SentFinishClient, E::ClientRecvFinishServer) => {
+                Some(S::ReadyToComplete)
+            }
+            _ => None,
+        }
+    }
+
+    fn server_transition(old: HandshakeState, ev: HandshakeEvent) -> Option<HandshakeState> {
+        use HandshakeEvent as E;
+        use HandshakeState as S;
+        match (old, ev) {
+            (S::Start, E::ServerRecvHello) => Some(S::GotHello),
+            (S::GotHello, E::ServerSendAccept) => Some(S::SentAccept),
+            (S::SentAccept, E::ServerRecvFinishClient) => Some(S::GotFinishClient),
+            (S::GotFinishClient, E::ServerSendFinishServer) => Some(S::ReadyToComplete),
+            _ => None,
+        }
+    }
+
     fn seal_confirm(
         aead_impl: &A,
         role: ConfirmRole,
@@ -164,51 +191,19 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
 
     fn apply(&mut self, ev: HandshakeEvent) -> Result<(), ApplicationHandshakeError> {
         let old = self.state;
-        let role = self.role;
-        let new = match (role, old, ev) {
-            (Role::Client, HandshakeState::Start, HandshakeEvent::ClientSendHello) => {
-                HandshakeState::SentHello
+        let new = match self.role {
+            Role::Client => Self::client_transition(old, ev),
+            Role::Server => Self::server_transition(old, ev),
+        }
+        .or(match (old, ev) {
+            (HandshakeState::ReadyToComplete, HandshakeEvent::Complete) => {
+                Some(HandshakeState::Complete)
             }
-            (Role::Client, HandshakeState::SentHello, HandshakeEvent::ClientRecvAccept) => {
-                HandshakeState::GotAccept
-            }
-            (Role::Client, HandshakeState::GotAccept, HandshakeEvent::ClientSendFinishClient) => {
-                HandshakeState::SentFinishClient
-            }
-            (Role::Server, HandshakeState::Start, HandshakeEvent::ServerRecvHello) => {
-                HandshakeState::GotHello
-            }
-            (Role::Server, HandshakeState::GotHello, HandshakeEvent::ServerSendAccept) => {
-                HandshakeState::SentAccept
-            }
-            (Role::Server, HandshakeState::SentAccept, HandshakeEvent::ServerRecvFinishClient) => {
-                HandshakeState::GotFinishClient
-            }
-            (
-                Role::Client,
-                HandshakeState::GotAccept | HandshakeState::SentFinishClient,
-                HandshakeEvent::ClientRecvFinishServer,
-            )
-            | (
-                Role::Server,
-                HandshakeState::GotFinishClient,
-                HandshakeEvent::ServerSendFinishServer,
-            )
-            | (_, HandshakeState::ReadyToComplete, HandshakeEvent::MarkReady) => {
-                HandshakeState::ReadyToComplete
-            }
-            (_, HandshakeState::ReadyToComplete, HandshakeEvent::Complete) => {
-                HandshakeState::Complete
-            }
-            (_, s, HandshakeEvent::MarkReady) if s != HandshakeState::ReadyToComplete => {
-                HandshakeState::ReadyToComplete
-            }
-            _ => {
-                return Err(ApplicationHandshakeError::ValidationError(
-                    "invalid transition".into(),
-                ));
-            }
-        };
+            // MarkReady always advances (or is idempotent) to ReadyToComplete
+            (_, HandshakeEvent::MarkReady) => Some(HandshakeState::ReadyToComplete),
+            _ => None,
+        })
+        .ok_or_else(|| ApplicationHandshakeError::ValidationError("invalid transition".into()))?;
         debug_assert!(
             Self::state_ordinal(new) >= Self::state_ordinal(old),
             "state regression: {old:?} -> {new:?}"
