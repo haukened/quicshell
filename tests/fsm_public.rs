@@ -1,9 +1,10 @@
 //! Integration-style tests exercising public FSM methods with real domain message constructors.
 
+use quicshell::application::TranscriptPort;
 use quicshell::application::handshake::errors::ApplicationHandshakeError;
 use quicshell::application::handshake::fsm::{HandshakeFsm, HandshakeState, Role};
 use quicshell::domain::handshake::{Accept, FinishClient, FinishServer, Hello, UserAuth};
-use quicshell::ports::crypto::Seq;
+use quicshell::ports::crypto::{AeadError, AeadKey, AeadSeal, NonceSalt, Seq};
 use quicshell::protocol::handshake::keyschedule::DirectionKeys;
 use quicshell::test_support::{mk_cap, mk_kem, mk_keys, mk_nonce};
 
@@ -12,6 +13,65 @@ struct DummyConn {
     server: Option<DirectionKeys>,
     cseq: Seq,
     sseq: Seq,
+}
+
+// Dummy transcript (XOR-based) for test purposes only.
+struct DummyTranscript {
+    h: [u8; 48],
+}
+impl TranscriptPort for DummyTranscript {
+    fn absorb_canonical(&mut self, bytes: &[u8]) {
+        for (i, b) in bytes.iter().enumerate().take(48) {
+            self.h[i] ^= b;
+        }
+    }
+    fn hash(&self) -> [u8; 48] {
+        self.h
+    }
+}
+
+// Dummy AEAD that performs no encryption; satisfies trait for FSM construction in tests.
+struct DummyAead;
+impl AeadSeal for DummyAead {
+    fn seal_in_place(
+        &self,
+        _key: &AeadKey,
+        _salt: NonceSalt,
+        _seq: Seq,
+        _aad: &[u8],
+        _buf: &mut Vec<u8>,
+    ) -> Result<(), AeadError> {
+        Ok(())
+    }
+    fn open_in_place(
+        &self,
+        _key: &AeadKey,
+        _salt: NonceSalt,
+        _seq: Seq,
+        _aad: &[u8],
+        _buf: &mut Vec<u8>,
+    ) -> Result<(), AeadError> {
+        Ok(())
+    }
+    fn seal_detached_tag(
+        &self,
+        _key: &AeadKey,
+        _salt: NonceSalt,
+        _seq: Seq,
+        _aad: &[u8],
+    ) -> Result<[u8; 16], AeadError> {
+        Ok([0u8; 16])
+    }
+    fn open_detached_tag(
+        &self,
+        _key: &AeadKey,
+        _salt: NonceSalt,
+        _seq: Seq,
+        _aad: &[u8],
+        _tag: &[u8; 16],
+    ) -> Result<(), AeadError> {
+        Ok(())
+    }
 }
 
 impl quicshell::application::handshake::fsm::KeySink for DummyConn {
@@ -72,7 +132,12 @@ fn client_public_happy_path() {
         cseq: Seq(7),
         sseq: Seq(8),
     };
-    let mut fsm = HandshakeFsm::new(Role::Client, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Client,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     let hello = build_hello();
     let accept = build_accept();
     let finish_server = build_finish_server();
@@ -96,7 +161,12 @@ fn client_public_invalid_sequences() {
         cseq: Seq(0),
         sseq: Seq(0),
     };
-    let mut fsm = HandshakeFsm::new(Role::Client, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Client,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     let accept = build_accept();
     let finish_server = build_finish_server();
     // ACCEPT before HELLO
@@ -126,7 +196,12 @@ fn client_public_ready_idempotent_and_early() {
         cseq: Seq(0),
         sseq: Seq(0),
     };
-    let mut fsm = HandshakeFsm::new(Role::Client, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Client,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     // Early ready jumps directly
     fsm.ready();
     assert_eq!(fsm.state(), HandshakeState::ReadyToComplete);
@@ -146,7 +221,12 @@ fn server_public_happy_path() {
         cseq: Seq(11),
         sseq: Seq(12),
     };
-    let mut fsm = HandshakeFsm::new(Role::Server, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Server,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     let hello = build_hello();
     let accept = build_accept();
     let finish_client = build_finish_client();
@@ -172,7 +252,12 @@ fn server_public_invalid_sequences() {
         cseq: Seq(0),
         sseq: Seq(0),
     };
-    let mut fsm = HandshakeFsm::new(Role::Server, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Server,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     let accept = build_accept();
     let finish_client = build_finish_client();
     let finish_server = build_finish_server();
@@ -197,7 +282,12 @@ fn public_generic_error_via_cross_role_call() {
         cseq: Seq(0),
         sseq: Seq(0),
     };
-    let mut fsm = HandshakeFsm::new(Role::Client, conn);
+    let mut fsm = HandshakeFsm::new(
+        Role::Client,
+        conn,
+        DummyTranscript { h: [0; 48] },
+        DummyAead,
+    );
     let accept = build_accept();
     assert!(fsm.on_start_server_send_accept(&accept).is_err());
 }
