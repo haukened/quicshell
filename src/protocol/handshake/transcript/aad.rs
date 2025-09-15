@@ -1,6 +1,7 @@
 const HEADER: &[u8] = b"qsh v1 confirm"; // 14 bytes
 const SEP: u8 = 0x00;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfirmRole {
     ClientSends,
     ServerSends,
