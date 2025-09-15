@@ -189,6 +189,25 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         Ok(())
     }
 
+    #[inline]
+    fn ensure_prk(&mut self, th: &[u8; 48], hybrid_shared: &[u8]) {
+        if self.prk.is_none() {
+            self.prk = Some(prk_from(th, hybrid_shared));
+        }
+    }
+
+    #[inline]
+    fn ensure_writes(&mut self, th: &[u8; 48]) -> Result<(), ApplicationHandshakeError> {
+        if self.writes.is_none() {
+            let prk = self.prk.as_ref().ok_or_else(|| {
+                ApplicationHandshakeError::ValidationError("PRK not available".into())
+            })?;
+            let wk: WriteKeys = derive_keys(th, prk)?;
+            self.writes = Some(wk);
+        }
+        Ok(())
+    }
+
     fn apply(&mut self, ev: HandshakeEvent) -> Result<(), ApplicationHandshakeError> {
         let old = self.state;
         let new = match self.role {
@@ -446,21 +465,11 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
                 "FSM not ready to complete".into(),
             ));
         }
-        if self.prk.is_none() {
-            self.prk = Some(prk_from(&th, hybrid_shared));
-        }
-        if self.writes.is_none() {
-            let prk = self.prk.as_ref().ok_or_else(|| {
-                ApplicationHandshakeError::ValidationError("PRK not available".into())
-            })?;
-            let wk: WriteKeys = derive_keys(&th, prk)?;
-            self.writes = Some(wk);
-        }
-        let writes = self
-            .writes
-            .take()
-            .ok_or_else(|| ApplicationHandshakeError::ValidationError("writes missing".into()))?;
-        let WriteKeys { client, server } = writes;
+        self.ensure_prk(&th, hybrid_shared);
+        self.ensure_writes(&th)?;
+        let WriteKeys { client, server } = self.writes.take().ok_or_else(|| {
+            ApplicationHandshakeError::ValidationError("write keys missing".into())
+        })?;
         self.conn.install_keys(client, server);
         self.conn.set_seqs(self.next_cli_write, self.next_srv_write);
         self.apply(HandshakeEvent::Complete)
