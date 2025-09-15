@@ -12,7 +12,7 @@ impl TranscriptPort for Sha384Transcript {
     fn absorb_canonical(&mut self, bytes: &[u8]) {
         use sha2::{Digest, Sha384};
         let mut hasher = Sha384::new();
-        hasher.update(&self.h);
+        hasher.update(self.h);
         hasher.update(bytes);
         self.h.copy_from_slice(&hasher.finalize());
     }
