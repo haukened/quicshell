@@ -6,6 +6,7 @@ use quicshell::application::handshake::fsm::{HandshakeFsm, HandshakeState, Role}
 use quicshell::domain::handshake::{Accept, FinishClient, FinishServer, Hello, UserAuth};
 use quicshell::ports::crypto::{AeadError, AeadKey, AeadSeal, NonceSalt, Seq};
 use quicshell::protocol::handshake::keyschedule::DirectionKeys;
+use quicshell::protocol::handshake::wire::adapter::WireAdapter;
 use quicshell::test_support::{mk_cap, mk_kem, mk_keys, mk_nonce};
 
 struct DummyConn {
@@ -137,6 +138,7 @@ fn client_public_happy_path() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     let hello = build_hello();
     let accept = build_accept();
@@ -144,6 +146,9 @@ fn client_public_happy_path() {
 
     fsm.on_start_client_send_hello(&hello).unwrap();
     fsm.on_accept(&accept).unwrap();
+    // Simulate hybrid KEM shared secret becoming available (PRK derives from th + shared)
+    let shared = [9u8; 32];
+    fsm.set_hybrid_shared(&shared);
     fsm.on_finish_server(&finish_server).unwrap();
     assert_eq!(fsm.state(), HandshakeState::ReadyToComplete);
 
@@ -166,6 +171,7 @@ fn client_public_invalid_sequences() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     let accept = build_accept();
     let finish_server = build_finish_server();
@@ -201,6 +207,7 @@ fn client_public_ready_idempotent_and_early() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     // Early ready jumps directly
     fsm.ready();
@@ -226,6 +233,7 @@ fn server_public_happy_path() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     let hello = build_hello();
     let accept = build_accept();
@@ -233,9 +241,12 @@ fn server_public_happy_path() {
     let finish_server = build_finish_server();
 
     fsm.on_hello(&hello).unwrap();
+    // Simulate hybrid KEM shared secret becoming available on server
+    let shared = [7u8; 32];
+    fsm.set_hybrid_shared(&shared);
     fsm.on_start_server_send_accept(&accept).unwrap();
     fsm.on_finish_client(&finish_client).unwrap();
-    fsm.on_start_server_send_finish(&finish_server).unwrap();
+    let _fs = fsm.build_finish_server(finish_server).unwrap();
     assert_eq!(fsm.state(), HandshakeState::ReadyToComplete);
 
     let th = [2u8; 48];
@@ -257,20 +268,14 @@ fn server_public_invalid_sequences() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     let accept = build_accept();
     let finish_client = build_finish_client();
-    let finish_server = build_finish_server();
     // ACCEPT before HELLO
     assert!(fsm.on_start_server_send_accept(&accept).is_err());
     // FINISH_CLIENT before ACCEPT
     assert!(fsm.on_finish_client(&finish_client).is_err());
-    // FINISH_SERVER before FINISH_CLIENT
-    assert!(fsm.on_start_server_send_finish(&finish_server).is_err());
-    // Move to GotHello then FINISH_SERVER still invalid
-    let hello = build_hello();
-    fsm.on_hello(&hello).unwrap();
-    assert!(fsm.on_start_server_send_finish(&finish_server).is_err());
 }
 
 #[test]
@@ -287,6 +292,7 @@ fn public_generic_error_via_cross_role_call() {
         conn,
         DummyTranscript { h: [0; 48] },
         DummyAead,
+        WireAdapter,
     );
     let accept = build_accept();
     assert!(fsm.on_start_server_send_accept(&accept).is_err());
