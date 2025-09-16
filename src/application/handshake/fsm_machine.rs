@@ -93,7 +93,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         label: &str,
     ) -> Result<(), ApplicationHandshakeError> {
         let bytes = self.wire.encode_transcript(r).map_err(|e| {
-            ApplicationHandshakeError::ValidationError(format!("wire encode {label} failed: {e}"))
+            ApplicationHandshakeError::ValidationError(format!("wire: encode {label} failed: {e}"))
         })?;
         self.transcript.absorb_canonical(&bytes);
         Ok(())
@@ -102,9 +102,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     fn derive_keys_and_th(&mut self) -> Result<([u8; 48], WriteKeys), ApplicationHandshakeError> {
         if self.writes.is_none() {
             let prk = self.prk.ok_or_else(|| {
-                ApplicationHandshakeError::ValidationError(
-                    "PRK not set (call set_hybrid_shared)".into(),
-                )
+                ApplicationHandshakeError::ValidationError("prerequisite missing: prk".into())
             })?;
             let th_now = self.transcript.hash();
             let wk_now = derive_keys(&th_now, &prk)?;
@@ -114,7 +112,11 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         let wk = self
             .writes
             .as_ref()
-            .ok_or_else(|| ApplicationHandshakeError::ValidationError("writes unavailable".into()))?
+            .ok_or_else(|| {
+                ApplicationHandshakeError::ValidationError(
+                    "prerequisite missing: write-keys".into(),
+                )
+            })?
             .clone();
         Ok((th, wk))
     }
@@ -164,7 +166,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         let tag = aead_impl
             .seal_detached_tag(&dk.key, dk.salt, *seq, aad)
             .map_err(|_| {
-                ApplicationHandshakeError::ValidationError("confirm tag seal failed".into())
+                ApplicationHandshakeError::ValidationError("crypto: seal-confirm failed".into())
             })?;
         seq.0 += 1;
         Ok(tag)
@@ -183,7 +185,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
         aead_impl
             .open_detached_tag(&dk.key, dk.salt, *seq, aad, &tag)
             .map_err(|_| {
-                ApplicationHandshakeError::ValidationError("confirm tag verification failed".into())
+                ApplicationHandshakeError::ValidationError("crypto: verify-confirm failed".into())
             })?;
         seq.0 += 1;
         Ok(())
@@ -200,7 +202,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     fn ensure_writes(&mut self, th: &[u8; 48]) -> Result<(), ApplicationHandshakeError> {
         if self.writes.is_none() {
             let prk = self.prk.as_ref().ok_or_else(|| {
-                ApplicationHandshakeError::ValidationError("PRK not available".into())
+                ApplicationHandshakeError::ValidationError("prerequisite missing: prk".into())
             })?;
             let wk: WriteKeys = derive_keys(th, prk)?;
             self.writes = Some(wk);
@@ -222,7 +224,9 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
             (_, HandshakeEvent::MarkReady) => Some(HandshakeState::ReadyToComplete),
             _ => None,
         })
-        .ok_or_else(|| ApplicationHandshakeError::ValidationError("invalid transition".into()))?;
+        .ok_or_else(|| {
+            ApplicationHandshakeError::ValidationError("invalid state: transition".into())
+        })?;
         debug_assert!(
             Self::state_ordinal(new) >= Self::state_ordinal(old),
             "state regression: {old:?} -> {new:?}"
@@ -233,9 +237,11 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
 
     fn tag_as_array(tag: &[u8]) -> Result<[u8; AEAD_TAG_LEN], ApplicationHandshakeError> {
         if tag.len() != AEAD_TAG_LEN {
-            return Err(ApplicationHandshakeError::ValidationError(
-                "confirm tag wrong length".into(),
-            ));
+            return Err(ApplicationHandshakeError::ValidationError(format!(
+                "crypto: confirm-tag length invalid (got={} expected={})",
+                tag.len(),
+                AEAD_TAG_LEN
+            )));
         }
         let mut arr = [0u8; AEAD_TAG_LEN];
         arr.copy_from_slice(tag);
@@ -277,7 +283,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
                 || self.state == HandshakeState::SentFinishClient)
         {
             return Err(ApplicationHandshakeError::ValidationError(
-                "invalid state for FINISH_SERVER".into(),
+                "invalid state: client-recv-finish-server".into(),
             ));
         }
         let (th, wk) = self.derive_keys_and_th()?;
@@ -310,7 +316,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     ) -> Result<FinishClient, ApplicationHandshakeError> {
         if self.role != Role::Client || self.state != HandshakeState::GotAccept {
             return Err(ApplicationHandshakeError::ValidationError(
-                "invalid state for build FINISH_CLIENT".into(),
+                "invalid state: client-build-finish-client".into(),
             ));
         }
         let (th, wk) = self.derive_keys_and_th()?;
@@ -364,7 +370,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     ) -> Result<(), ApplicationHandshakeError> {
         if self.role != Role::Server || self.state != HandshakeState::SentAccept {
             return Err(ApplicationHandshakeError::ValidationError(
-                "invalid state for FINISH_CLIENT".into(),
+                "invalid state: server-recv-finish-client".into(),
             ));
         }
         let (th, wk) = self.derive_keys_and_th()?;
@@ -396,7 +402,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     ) -> Result<FinishServer, ApplicationHandshakeError> {
         if self.role != Role::Server || self.state != HandshakeState::GotFinishClient {
             return Err(ApplicationHandshakeError::ValidationError(
-                "invalid state for build FINISH_SERVER".into(),
+                "invalid state: server-build-finish-server".into(),
             ));
         }
         let (th, wk) = self.derive_keys_and_th()?;
@@ -459,13 +465,13 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     ) -> Result<(), ApplicationHandshakeError> {
         if self.state != HandshakeState::ReadyToComplete {
             return Err(ApplicationHandshakeError::ValidationError(
-                "FSM not ready to complete".into(),
+                "invalid state: complete".into(),
             ));
         }
         self.ensure_prk(&th, hybrid_shared);
         self.ensure_writes(&th)?; // ensure_writes retained temporarily; could inline later
         let wk = self.writes.take().ok_or_else(|| {
-            ApplicationHandshakeError::ValidationError("write keys missing".into())
+            ApplicationHandshakeError::ValidationError("prerequisite missing: write-keys".into())
         })?;
         self.conn.install_write_keys(wk);
         self.conn.set_seqs(self.next_cli_write, self.next_srv_write);
