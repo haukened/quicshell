@@ -45,12 +45,12 @@ Internal events (enum `HandshakeEvent`) drive transitions:
 
 | Event | Trigger (public API) | Role | Description |
 |-------|----------------------|------|-------------|
-| `ClientSendHello` | `on_start_client_send_hello` | Client | Absorb outbound HELLO. |
+| `ClientSendHello` | `on_client_send_hello` | Client | Absorb outbound HELLO. |
 | `ClientRecvAccept` | `on_accept` | Client | Absorb inbound ACCEPT. |
 | `ClientSendFinishClient` | `build_finish_client` | Client | Seal client confirm, absorb FINISH_CLIENT. |
 | `ClientRecvFinishServer` | `on_finish_server` | Client | Verify server confirm, absorb FINISH_SERVER. |
 | `ServerRecvHello` | `on_hello` | Server | Absorb inbound HELLO. |
-| `ServerSendAccept` | `on_start_server_send_accept` | Server | Absorb outbound ACCEPT. |
+| `ServerSendAccept` | `on_server_send_accept` | Server | Absorb outbound ACCEPT. |
 | `ServerRecvFinishClient` | `on_finish_client` | Server | Verify client confirm, absorb FINISH_CLIENT. |
 | `ServerSendFinishServer` | `build_finish_server` | Server | Seal server confirm, absorb FINISH_SERVER. |
 | `MarkReady` | `ready()` (tests / orchestration convenience) | Both | Coerce/ensure advancement to `ReadyToComplete`. Idempotent / forward‑only. |
