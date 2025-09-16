@@ -36,8 +36,9 @@ pub fn mk_cap(s: &str) -> Capability {
 /// 32-byte zeroed nonce
 #[allow(clippy::missing_panics_doc)]
 #[allow(clippy::must_use_candidate)]
-pub fn mk_nonce() -> Nonce32 {
-    Nonce32([0u8; 32])
+pub fn mk_nonce() -> HandshakeNonce {
+    // Deterministic zero nonce strictly for tests.
+    HandshakeNonce::try_from(&[0u8; 32][..]).unwrap()
 }
 
 /// Construct dummy KEM values (client/server ephemeral + ciphertext)

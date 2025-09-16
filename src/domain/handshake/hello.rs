@@ -1,17 +1,18 @@
 use crate::domain::handshake::errors::HandshakeError;
 use crate::domain::handshake::params::{CAP_COUNT_MAX, PAD_MAX};
-use crate::domain::handshake::{Capability, KemClientEphemeral, Nonce32};
+use crate::domain::handshake::{Capability, HandshakeNonce, KemClientEphemeral};
 use serde::{Deserialize, Serialize};
 
 /// # Example (constructing a minimal `Hello`)
 /// ```ignore
 /// use quicshell::core::protocol::handshake::types::{
-///         Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, Nonce32, Capability
+///         Hello, KemClientEphemeral, X25519Pub, Mlkem768Pub, HandshakeNonce, Capability
 /// };
 /// // Dummy zeroed values for illustration ONLY – real code must use cryptographically
 /// // secure randomness / proper key generation.
 /// let kem = KemClientEphemeral { x25519_pub: X25519Pub([0;32]), mlkem_pub: Mlkem768Pub([0;1184]) };
-/// let nonce = Nonce32([0;32]);
+/// // Test / example only; real code: use secure RNG -> HandshakeNonce::random(&mut rng)
+/// let nonce = HandshakeNonce::try_from(&[0u8;32][..]).unwrap();
 /// let caps = vec![Capability::parse("EXEC").unwrap(), Capability::parse("TTY").unwrap()];
 /// // Calling the `new` constructor validates the message immediately.
 /// let h_res = Hello::new(kem, nonce, caps, None);
@@ -32,7 +33,7 @@ pub struct Hello {
     /// Client's ephemeral KEM public keys
     pub kem_client_ephemeral: KemClientEphemeral,
     /// Randomly generated client nonce (length == 32)
-    pub client_nonce: Nonce32,
+    pub client_nonce: HandshakeNonce,
     /// Advisory capability tokens (validated, must include baseline EXEC & TTY, strictly increasing)
     pub capabilities: Vec<Capability>,
     /// Optional padding (excluded from transcript hash)
@@ -83,7 +84,7 @@ impl Hello {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         kem_client_ephemeral: KemClientEphemeral,
-        client_nonce: Nonce32,
+        client_nonce: HandshakeNonce,
         capabilities: Vec<Capability>,
         pad: Option<Vec<u8>>,
     ) -> Result<Self, HandshakeError> {

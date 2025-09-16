@@ -1,5 +1,5 @@
 use crate::domain::handshake::params::{CERT_MAX, PAD_MAX};
-use crate::domain::handshake::{HandshakeError, KemServerEphemeral, Nonce32};
+use crate::domain::handshake::{HandshakeError, HandshakeNonce, KemServerEphemeral};
 use serde::{Deserialize, Serialize};
 
 /// Server ACCEPT handshake message (spec §5.1).
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Accept {
     pub kem_server_ephemeral: KemServerEphemeral,
     pub host_cert_chain: Vec<Vec<u8>>, // array even if length 1
-    pub server_nonce: Nonce32,         // length == 32
+    pub server_nonce: HandshakeNonce,  // length == 32
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ticket_params: Option<TicketParams>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -58,7 +58,7 @@ impl Accept {
     pub fn new(
         kem_server_ephemeral: KemServerEphemeral,
         host_cert_chain: Vec<Vec<u8>>,
-        server_nonce: Nonce32,
+        server_nonce: HandshakeNonce,
         ticket_params: Option<TicketParams>,
         revocation_policy: Option<String>,
         pad: Option<Vec<u8>>,
