@@ -18,7 +18,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
     - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
     - [x] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
   - [x] Confirm tag sealing/verification using transcript AAD helpers
-    - [ ] Directional nonce/sequence manager with reuse/overflow detection
+  - [x] Directional nonce/sequence manager with reuse/overflow detection *(implementation + spec §6.3.1; HKDF epoch rekey helpers tracked under rekey implementation task)*
     - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
     - [ ] Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)
     - [ ] Integration tests: full handshake -> encrypted payload + confirm tags

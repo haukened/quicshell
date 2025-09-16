@@ -198,6 +198,16 @@ impl DirectionalNonceManager for DirectionalNonceM {
             self.cfg.soft_bytes <= self.cfg.hard_bytes,
             "soft_bytes must not exceed hard_bytes"
         );
+        debug_assert!(
+            new_epoch > self.epoch,
+            "epoch must strictly increase (old: {}, new: {})",
+            self.epoch,
+            new_epoch
+        );
+        debug_assert!(
+            new_salt != self.salt,
+            "nonce salt must change between epochs"
+        );
         self.salt = new_salt;
         self.epoch = new_epoch;
         self.counter = 0;
