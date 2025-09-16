@@ -159,6 +159,23 @@ fn new_server_ok() -> HandshakeFsm<DummyConn, DummyTranscript, DummyAead, OkWire
 
 // --------------- Tests ---------------
 
+fn th<C, T, A, W>(fsm: &mut HandshakeFsm<C, T, A, W>) -> [u8; 48]
+where
+    C: KeySink,
+    T: TranscriptPort,
+    A: AeadSeal,
+    W: HandshakeWire,
+{
+    if !matches!(
+        fsm.state(),
+        HandshakeState::ReadyToComplete | HandshakeState::Complete
+    ) {
+        fsm.ready();
+    }
+    fsm.transcript_hash()
+        .expect("transcript_hash accessible after forced ready")
+}
+
 #[test]
 fn wire_encode_failure_propagates() {
     let mut fsm = HandshakeFsm::new(
@@ -269,7 +286,8 @@ fn complete_without_ready_state_fails() {
     cli.on_accept(&a).unwrap();
     cli.prk = Some([1u8; 48]);
     cli.writes = Some(wk());
-    let err = cli.complete(cli.transcript.hash(), b"hs").unwrap_err();
+    assert!(cli.transcript_hash().is_err());
+    let err = cli.complete([0u8; 48], b"hs").unwrap_err();
     matches!(err, ApplicationHandshakeError::ValidationError(_));
 }
 
@@ -283,7 +301,7 @@ fn successful_complete_installs_keys() {
     cli.on_accept(&a).unwrap();
     // mark ready (simulate finish exchange earlier)
     cli.ready();
-    let th = cli.transcript.hash();
+    let th = cli.transcript_hash().unwrap();
     let shared = [5u8; 32];
     cli.complete(th, &shared).unwrap();
     assert!(cli.conn.installed.is_some());
@@ -362,7 +380,7 @@ fn complete_with_existing_prk_and_writes_skips_derivation() {
     // Pre-install PRK and writes to hit complete() branches that skip derivation logic.
     client.prk = Some([0xAA; 48]);
     client.writes = Some(wk());
-    let th = client.transcript.hash();
+    let th = client.transcript_hash().unwrap();
     client.complete(th, b"ignored-shared").unwrap();
     assert_eq!(client.state(), HandshakeState::Complete);
 }
@@ -378,8 +396,8 @@ fn transcript_sync_end_to_end() {
     server.on_server_send_accept(&accept).unwrap();
     client.on_accept(&accept).unwrap();
     // Hashes equal after ACCEPT.
-    let th_client_pre = client.transcript.hash();
-    let th_server_pre = server.transcript.hash();
+    let th_client_pre = th(&mut client);
+    let th_server_pre = th(&mut server);
     assert_eq!(
         th_client_pre, th_server_pre,
         "transcript mismatch after ACCEPT"
@@ -391,8 +409,8 @@ fn transcript_sync_end_to_end() {
     server.on_finish_client(&fc).unwrap();
     let fs = server.build_finish_server(mk_finish_server()).unwrap();
     client.on_finish_server(&fs).unwrap();
-    let th_client_final = client.transcript.hash();
-    let th_server_final = server.transcript.hash();
+    let th_client_final = th(&mut client);
+    let th_server_final = th(&mut server);
     assert_eq!(
         th_client_final, th_server_final,
         "final transcript hashes diverged"
@@ -476,7 +494,7 @@ fn complete_with_prk_only_derives_writes() {
     cli.ready();
     cli.prk = Some([3u8; 48]);
     assert!(cli.writes.is_none());
-    let th = cli.transcript.hash();
+    let th = cli.transcript_hash().unwrap();
     cli.complete(th, b"ignored").unwrap();
     assert!(cli.state() == HandshakeState::Complete);
 }

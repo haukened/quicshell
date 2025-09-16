@@ -482,6 +482,23 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     pub fn state(&self) -> HandshakeState {
         self.state
     }
+
+    /// Return the current handshake transcript hash (`SHA-384`).
+    ///
+    /// Safety / Semantics:
+    /// - Only valid (stable) once the FSM reached `HandshakeState::ReadyToComplete` or `Complete`.
+    /// - Calling earlier returns an `invalid state: transcript-hash` error to prevent
+    ///   accidental channel binding on a non-final transcript.
+    pub fn transcript_hash(&self) -> Result<[u8; 48], ApplicationHandshakeError> {
+        match self.state {
+            HandshakeState::ReadyToComplete | HandshakeState::Complete => {
+                Ok(self.transcript.hash())
+            }
+            _ => Err(ApplicationHandshakeError::ValidationError(
+                "invalid state: transcript-hash".into(),
+            )),
+        }
+    }
     /// Mutable reference to underlying `KeySink` for advanced integration.
     pub fn conn_mut(&mut self) -> &mut C {
         &mut self.conn
