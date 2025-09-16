@@ -17,15 +17,15 @@ It reflects both the **protocol specification** and the **Rust reference impleme
     - [x] AEAD port (`AeadSeal` trait, key/nonce newtypes)
     - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
     - [x] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
-    - [ ] Confirm tag sealing/verification using transcript AAD helpers
+  - [x] Confirm tag sealing/verification using transcript AAD helpers
     - [ ] Directional nonce/sequence manager with reuse/overflow detection
     - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
     - [ ] Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)
     - [ ] Integration tests: full handshake -> encrypted payload + confirm tags
     - [x] Handshake FSM skeleton (state enum, role checks, transitions)
     - [x] FSM guards (role crossover prevention, no regression, enforced path)
-    - [ ] FSM transcript integration (absorb canonical CBOR, pad-stripped)
-    - [ ] FSM confirm-tag verification via AEAD adapter
+  - [x] FSM transcript integration (absorb canonical CBOR, pad-stripped)
+  - [x] FSM confirm-tag verification via AEAD adapter
     - [ ] FSM timeout / cancellation handling
     - [ ] FSM rekey orchestration (propose/ack/cutover states)
 - [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
