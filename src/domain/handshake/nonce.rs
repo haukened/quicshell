@@ -1,10 +1,32 @@
 use crate::domain::handshake::errors::HandshakeError;
 use crate::domain::handshake::params::NONCE_LEN;
 use aead::rand_core;
-use core::fmt;
+use core::{convert::TryFrom, fmt};
 use serde::{Deserialize, Serialize};
 
-/// 32-byte nonce used in `HELLO.client_nonce` and `ACCEPT.server_nonce`.
+/// 32-byte handshake freshness nonce used in `HELLO.client_nonce` and `ACCEPT.server_nonce`.
+///
+/// This nonce is sampled uniformly at random per handshake side and is **only**
+/// used for handshake message freshness (not for AEAD payload nonces). The
+/// transport / channel layer derives deterministic AEAD nonces separately from
+/// `NonceSalt` + sequence counters; keep those domains distinct.
+///
+/// Construction options:
+/// - `Nonce32::random(rng)` for cryptographically strong randomness.
+/// - `Nonce32::try_from(&[u8])` for fallible decoding/validation from a slice.
+/// - `Nonce32::from([u8;32])` zero‑cost conversion from an owned array.
+///
+/// Trait conveniences: implements `TryFrom<&[u8]>`, `From<[u8;32]>`, `AsRef<[u8]>`.
+///
+/// Invariants:
+/// - Always exactly 32 bytes (`NONCE_LEN`).
+/// - Opaque: `Debug` redacts inner value to avoid accidental logging of raw
+///   handshake entropy.
+///
+/// Security:
+/// - Do not reuse a previously generated `Nonce32` across independent handshakes.
+/// - Do not confuse this with AEAD nonces; misuse can enable replay or nonce
+///   collision at the encryption layer.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Nonce32(pub [u8; NONCE_LEN]);
 impl fmt::Debug for Nonce32 {
@@ -14,7 +36,12 @@ impl fmt::Debug for Nonce32 {
 }
 
 impl Nonce32 {
-    /// Securely generate a random nonce using the provided CSPRNG.
+    /// Securely generate a random `Nonce32` using the provided CSPRNG.
+    ///
+    /// The caller supplies the RNG (dependency inversion for testability).
+    ///
+    /// # Security
+    /// Each handshake participant MUST generate a fresh value; never reuse.
     #[must_use]
     pub fn random<R: rand_core::CryptoRng + rand_core::RngCore>(rng: &mut R) -> Self {
         let mut arr = [0u8; NONCE_LEN];
@@ -23,27 +50,47 @@ impl Nonce32 {
     }
 
     /// Access the inner byte array.
+    ///
+    /// This returns a reference; the caller must not assume any particular
+    /// distribution beyond uniform randomness at generation.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; NONCE_LEN] {
         &self.0
     }
+}
 
-    /// Create a `Nonce32` from a byte slice, validating length.
+impl TryFrom<&[u8]> for Nonce32 {
+    type Error = HandshakeError;
+
+    /// Attempt to construct a `Nonce32` from a byte slice.
     ///
     /// # Errors
-    ///
-    /// Returns `Err` if the input slice length does not match `NONCE_LEN`.
-    pub fn from_bytes(b: &[u8]) -> Result<Self, HandshakeError> {
-        if b.len() != NONCE_LEN {
+    /// Returns `HandshakeError::LengthMismatch` if the slice length != `NONCE_LEN`.
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != NONCE_LEN {
             return Err(HandshakeError::LengthMismatch {
                 field: "Nonce32",
                 expected: NONCE_LEN,
-                actual: b.len(),
+                actual: value.len(),
             });
         }
         let mut arr = [0u8; NONCE_LEN];
-        arr.copy_from_slice(b);
+        arr.copy_from_slice(value);
         Ok(Nonce32(arr))
+    }
+}
+
+impl From<[u8; NONCE_LEN]> for Nonce32 {
+    /// Zero-cost conversion from an owned 32-byte array into a `Nonce32`.
+    fn from(value: [u8; NONCE_LEN]) -> Self {
+        Nonce32(value)
+    }
+}
+
+impl AsRef<[u8]> for Nonce32 {
+    /// Borrow the inner bytes as a slice (e.g., for serialization APIs).
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -53,17 +100,18 @@ mod tests {
     use crate::domain::handshake::errors::HandshakeError;
     use crate::domain::handshake::params::NONCE_LEN;
     use aead::rand_core::{CryptoRng, RngCore};
+    use core::convert::TryFrom;
 
     #[test]
-    fn nonce32_from_bytes_success_and_error() {
+    fn nonce32_try_from_success_and_error() {
         let good = vec![1u8; NONCE_LEN];
-        let n = Nonce32::from_bytes(&good).unwrap();
+        let n = Nonce32::try_from(good.as_slice()).unwrap();
         assert_eq!(n.as_bytes(), &good[..]);
         // Debug formatting coverage
         let d = format!("{:?}", n);
         assert!(d.contains("Nonce32"));
         let bad = vec![2u8; NONCE_LEN - 1];
-        let err = Nonce32::from_bytes(&bad).unwrap_err();
+        let err = Nonce32::try_from(bad.as_slice()).unwrap_err();
         match err {
             HandshakeError::LengthMismatch {
                 field,
@@ -130,5 +178,13 @@ mod tests {
         assert_ne!(n1, n2, "OsRng should produce different nonces");
         assert_eq!(n1.as_bytes().len(), NONCE_LEN);
         assert_eq!(n2.as_bytes().len(), NONCE_LEN);
+    }
+
+    #[test]
+    fn nonce32_from_array_and_asref() {
+        let arr = [7u8; NONCE_LEN];
+        let n: Nonce32 = arr.into();
+        assert_eq!(n.as_bytes(), &arr);
+        assert_eq!(n.as_ref(), &arr);
     }
 }
