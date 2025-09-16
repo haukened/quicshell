@@ -10,13 +10,13 @@ use crate::test_support::support::{mk_accept, mk_finish_client, mk_finish_server
 
 #[derive(Default)]
 struct DummyConn {
-    installed: Option<(DirectionKeys, DirectionKeys)>,
+    installed: Option<WriteKeys>,
     seqs: Option<(Seq, Seq)>,
 }
 
 impl KeySink for DummyConn {
-    fn install_keys(&mut self, client_write: DirectionKeys, server_write: DirectionKeys) {
-        self.installed = Some((client_write, server_write));
+    fn install_write_keys(&mut self, keys: WriteKeys) {
+        self.installed = Some(keys);
     }
     fn set_seqs(&mut self, client_seq: Seq, server_seq: Seq) {
         self.seqs = Some((client_seq, server_seq));

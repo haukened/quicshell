@@ -5,7 +5,7 @@ use quicshell::application::handshake::errors::ApplicationHandshakeError;
 use quicshell::application::handshake::fsm::{HandshakeFsm, HandshakeState, Role};
 use quicshell::domain::handshake::{Accept, FinishClient, FinishServer, Hello, UserAuth};
 use quicshell::ports::crypto::{AeadError, AeadKey, AeadSeal, NonceSalt, Seq};
-use quicshell::protocol::handshake::keyschedule::DirectionKeys;
+use quicshell::protocol::handshake::keyschedule::{DirectionKeys, WriteKeys};
 use quicshell::protocol::handshake::wire::adapter::WireAdapter;
 use quicshell::test_support::{mk_cap, mk_kem, mk_keys, mk_nonce};
 
@@ -76,9 +76,9 @@ impl AeadSeal for DummyAead {
 }
 
 impl quicshell::application::handshake::fsm::KeySink for DummyConn {
-    fn install_keys(&mut self, client_write: DirectionKeys, server_write: DirectionKeys) {
-        self.client = Some(client_write);
-        self.server = Some(server_write);
+    fn install_write_keys(&mut self, keys: WriteKeys) {
+        self.client = Some(keys.client);
+        self.server = Some(keys.server);
     }
     fn set_seqs(&mut self, client_seq: Seq, server_seq: Seq) {
         self.cseq = client_seq;

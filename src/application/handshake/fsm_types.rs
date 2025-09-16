@@ -1,5 +1,5 @@
 use crate::ports::crypto::Seq;
-use crate::protocol::handshake::keyschedule::DirectionKeys;
+use crate::protocol::handshake::keyschedule::WriteKeys;
 
 /// Port abstraction used by the handshake FSM to accumulate the canonical
 /// transcript.
@@ -41,8 +41,8 @@ pub trait TranscriptPort {
 /// transport phase encryption state after the handshake.
 ///
 /// Contract:
-/// - `install_keys()` is called exactly once per successful handshake with the
-///   freshly derived client/server `DirectionKeys`.
+/// - `install_write_keys()` is called exactly once per successful handshake with the
+///   freshly derived composite `WriteKeys` (client + server directions).
 /// - `set_seqs()` follows (or is combined) to seed starting `Seq` counters for
 ///   post‑handshake protected frames.
 ///
@@ -51,14 +51,8 @@ pub trait TranscriptPort {
 ///   storage (e.g., internal assignment) or panic only on unrecoverable logic
 ///   errors (documented in their own module).
 pub trait KeySink {
-    /// Install the negotiated write direction keys.
-    ///
-    /// Inputs:
-    /// - `client_write`: Keys the client uses to protect outbound traffic
-    ///   (client → server direction).
-    /// - `server_write`: Keys the server uses to protect outbound traffic
-    ///   (server → client direction).
-    fn install_keys(&mut self, client_write: DirectionKeys, server_write: DirectionKeys);
+    /// Install the negotiated composite write keys (both directions).
+    fn install_write_keys(&mut self, keys: WriteKeys);
 
     /// Set initial sequence counters for application data protection.
     ///

@@ -463,11 +463,11 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
             ));
         }
         self.ensure_prk(&th, hybrid_shared);
-        self.ensure_writes(&th)?;
-        let WriteKeys { client, server } = self.writes.take().ok_or_else(|| {
+        self.ensure_writes(&th)?; // ensure_writes retained temporarily; could inline later
+        let wk = self.writes.take().ok_or_else(|| {
             ApplicationHandshakeError::ValidationError("write keys missing".into())
         })?;
-        self.conn.install_keys(client, server);
+        self.conn.install_write_keys(wk);
         self.conn.set_seqs(self.next_cli_write, self.next_srv_write);
         self.apply(HandshakeEvent::Complete)
     }
