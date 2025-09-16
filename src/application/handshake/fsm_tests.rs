@@ -171,7 +171,9 @@ fn wire_encode_failure_propagates() {
     let h = mk_hello();
     let err = fsm.on_client_send_hello(&h).unwrap_err();
     match err {
-        ApplicationHandshakeError::ValidationError(s) => assert!(s.contains("wire encode")),
+        ApplicationHandshakeError::ValidationError(s) => {
+            assert!(s.contains("wire: encode HELLO failed"))
+        }
         _ => panic!("unexpected err"),
     }
 }
@@ -442,7 +444,9 @@ fn build_finish_client_prk_missing_error() {
     // PRK not set → derive_keys_and_th should fail.
     let err = cli.build_finish_client(mk_finish_client()).unwrap_err();
     match err {
-        ApplicationHandshakeError::ValidationError(s) => assert!(s.contains("PRK not set")),
+        ApplicationHandshakeError::ValidationError(s) => {
+            assert!(s.contains("prerequisite missing: prk"))
+        }
         _ => panic!("unexpected error kind"),
     }
 }
@@ -458,7 +462,9 @@ fn server_on_finish_client_prk_missing_error() {
     let fc = mk_finish_client();
     let err = srv.on_finish_client(&fc).unwrap_err();
     match err {
-        ApplicationHandshakeError::ValidationError(s) => assert!(s.contains("PRK not set")),
+        ApplicationHandshakeError::ValidationError(s) => {
+            assert!(s.contains("prerequisite missing: prk"))
+        }
         _ => panic!("unexpected error kind"),
     }
 }
