@@ -144,7 +144,7 @@ fn client_public_happy_path() {
     let accept = build_accept();
     let finish_server = build_finish_server();
 
-    fsm.on_start_client_send_hello(&hello).unwrap();
+    fsm.on_client_send_hello(&hello).unwrap();
     fsm.on_accept(&accept).unwrap();
     // Simulate hybrid KEM shared secret becoming available (PRK derives from th + shared)
     let shared = [9u8; 32];
@@ -187,7 +187,7 @@ fn client_public_invalid_sequences() {
     ));
     // Now send HELLO then try FINISH_SERVER skipping ACCEPT
     let hello = build_hello();
-    fsm.on_start_client_send_hello(&hello).unwrap();
+    fsm.on_client_send_hello(&hello).unwrap();
     assert!(matches!(
         fsm.on_finish_server(&finish_server),
         Err(ApplicationHandshakeError::ValidationError(_))
@@ -217,7 +217,7 @@ fn client_public_ready_idempotent_and_early() {
     assert_eq!(fsm.state(), HandshakeState::ReadyToComplete);
     // After marked ready, attempting hello should error and leave state
     let hello = build_hello();
-    assert!(fsm.on_start_client_send_hello(&hello).is_err());
+    assert!(fsm.on_client_send_hello(&hello).is_err());
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn server_public_happy_path() {
     // Simulate hybrid KEM shared secret becoming available on server
     let shared = [7u8; 32];
     fsm.set_hybrid_shared(&shared);
-    fsm.on_start_server_send_accept(&accept).unwrap();
+    fsm.on_server_send_accept(&accept).unwrap();
     fsm.on_finish_client(&finish_client).unwrap();
     let _fs = fsm.build_finish_server(finish_server).unwrap();
     assert_eq!(fsm.state(), HandshakeState::ReadyToComplete);
@@ -273,7 +273,7 @@ fn server_public_invalid_sequences() {
     let accept = build_accept();
     let finish_client = build_finish_client();
     // ACCEPT before HELLO
-    assert!(fsm.on_start_server_send_accept(&accept).is_err());
+    assert!(fsm.on_server_send_accept(&accept).is_err());
     // FINISH_CLIENT before ACCEPT
     assert!(fsm.on_finish_client(&finish_client).is_err());
 }
@@ -295,5 +295,5 @@ fn public_generic_error_via_cross_role_call() {
         WireAdapter,
     );
     let accept = build_accept();
-    assert!(fsm.on_start_server_send_accept(&accept).is_err());
+    assert!(fsm.on_server_send_accept(&accept).is_err());
 }

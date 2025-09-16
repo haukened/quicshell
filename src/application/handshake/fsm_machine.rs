@@ -249,10 +249,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     /// Returns `ApplicationHandshakeError::ValidationError` if canonical wire
     /// encoding fails or the state transition is invalid for the current
     /// `HandshakeState` / `Role`.
-    pub fn on_start_client_send_hello(
-        &mut self,
-        hello: &Hello,
-    ) -> Result<(), ApplicationHandshakeError> {
+    pub fn on_client_send_hello(&mut self, hello: &Hello) -> Result<(), ApplicationHandshakeError> {
         self.encode_absorb(HandshakeTranscriptRef::Hello(hello), "HELLO")?;
         self.apply(HandshakeEvent::ClientSendHello)
     }
@@ -348,7 +345,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     /// # Errors
     /// Returns `ApplicationHandshakeError::ValidationError` if encoding fails
     /// or the state does not allow the transition.
-    pub fn on_start_server_send_accept(
+    pub fn on_server_send_accept(
         &mut self,
         accept: &Accept,
     ) -> Result<(), ApplicationHandshakeError> {

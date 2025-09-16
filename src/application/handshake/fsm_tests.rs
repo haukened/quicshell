@@ -169,7 +169,7 @@ fn wire_encode_failure_propagates() {
         FailingWire,
     );
     let h = mk_hello();
-    let err = fsm.on_start_client_send_hello(&h).unwrap_err();
+    let err = fsm.on_client_send_hello(&h).unwrap_err();
     match err {
         ApplicationHandshakeError::ValidationError(s) => assert!(s.contains("wire encode")),
         _ => panic!("unexpected err"),
@@ -181,7 +181,7 @@ fn invalid_transition_rejected() {
     // Server trying to send accept before hello processed
     let a = mk_accept();
     let mut srv = new_server_ok();
-    let err = srv.on_start_server_send_accept(&a).unwrap_err();
+    let err = srv.on_server_send_accept(&a).unwrap_err();
     matches!(err, ApplicationHandshakeError::ValidationError(_));
 }
 
@@ -208,7 +208,7 @@ fn verify_server_confirm_failure() {
         OkWire,
     );
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     // derive keys early
@@ -232,7 +232,7 @@ fn build_finish_client_seal_failure() {
         OkWire,
     );
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     cli.prk = Some([3u8; 48]);
@@ -247,7 +247,7 @@ fn tag_wrong_length_triggers_error() {
     // Achieved by mutating server_confirm after building correct one then truncating
     let mut cli = new_client_ok();
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     cli.prk = Some([7u8; 48]);
@@ -262,7 +262,7 @@ fn tag_wrong_length_triggers_error() {
 fn complete_without_ready_state_fails() {
     let mut cli = new_client_ok();
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     cli.prk = Some([1u8; 48]);
@@ -276,7 +276,7 @@ fn successful_complete_installs_keys() {
     // Happy path minimal to ensure success still works
     let mut cli = new_client_ok();
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     // mark ready (simulate finish exchange earlier)
@@ -293,10 +293,10 @@ fn full_finish_exchange_success_paths() {
     let mut client = new_client_ok();
     let mut server = new_server_ok();
     let hello = mk_hello();
-    client.on_start_client_send_hello(&hello).unwrap();
+    client.on_client_send_hello(&hello).unwrap();
     server.on_hello(&hello).unwrap();
     let accept = mk_accept();
-    server.on_start_server_send_accept(&accept).unwrap();
+    server.on_server_send_accept(&accept).unwrap();
     client.on_accept(&accept).unwrap();
     // Inject shared secret via dedicated API for both (ensures identical PRK derivation using same transcript hash).
     let shared = b"hybrid-shared-material";
@@ -318,7 +318,7 @@ fn derive_keys_cache_reuse() {
     // Ensure second invocation of derive_keys_and_th does not overwrite cached keys.
     let mut client = new_client_ok();
     let hello = mk_hello();
-    client.on_start_client_send_hello(&hello).unwrap();
+    client.on_client_send_hello(&hello).unwrap();
     let accept = mk_accept();
     client.on_accept(&accept).unwrap();
     client.set_hybrid_shared(b"shared");
@@ -331,7 +331,7 @@ fn derive_keys_cache_reuse() {
     // Construct a server finish matching existing keys: build minimal server FSM to produce valid confirm.
     let mut server = new_server_ok();
     server.on_hello(&hello).unwrap();
-    server.on_start_server_send_accept(&accept).unwrap();
+    server.on_server_send_accept(&accept).unwrap();
     server.set_hybrid_shared(b"shared");
     // Server needs to verify client's finish to reach state allowing build_finish_server
     server.on_finish_client(&fc).unwrap();
@@ -370,10 +370,10 @@ fn transcript_sync_end_to_end() {
     let mut client = new_client_ok();
     let mut server = new_server_ok();
     let hello = mk_hello();
-    client.on_start_client_send_hello(&hello).unwrap();
+    client.on_client_send_hello(&hello).unwrap();
     server.on_hello(&hello).unwrap();
     let accept = mk_accept();
-    server.on_start_server_send_accept(&accept).unwrap();
+    server.on_server_send_accept(&accept).unwrap();
     client.on_accept(&accept).unwrap();
     // Hashes equal after ACCEPT.
     let th_client_pre = client.transcript.hash();
@@ -425,7 +425,7 @@ fn wire_failure_on_accept_only() {
         OneFailWire::default(),
     );
     let h = mk_hello();
-    fsm.on_start_client_send_hello(&h).unwrap();
+    fsm.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     let err = fsm.on_accept(&a).unwrap_err();
     matches!(err, ApplicationHandshakeError::ValidationError(_));
@@ -436,7 +436,7 @@ fn build_finish_client_prk_missing_error() {
     // Reach GotAccept without calling set_hybrid_shared then attempt build_finish_client.
     let mut cli = new_client_ok();
     let h = mk_hello();
-    cli.on_start_client_send_hello(&h).unwrap();
+    cli.on_client_send_hello(&h).unwrap();
     let a = mk_accept();
     cli.on_accept(&a).unwrap();
     // PRK not set → derive_keys_and_th should fail.
@@ -454,7 +454,7 @@ fn server_on_finish_client_prk_missing_error() {
     let h = mk_hello();
     srv.on_hello(&h).unwrap();
     let a = mk_accept();
-    srv.on_start_server_send_accept(&a).unwrap();
+    srv.on_server_send_accept(&a).unwrap();
     let fc = mk_finish_client();
     let err = srv.on_finish_client(&fc).unwrap_err();
     match err {
