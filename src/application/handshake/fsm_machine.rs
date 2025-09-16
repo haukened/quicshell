@@ -33,9 +33,19 @@ pub struct HandshakeFsm<C: KeySink, T: TranscriptPort, A: AeadSeal, W: Handshake
     pub(crate) wire: W,
     pub(crate) prk: Option<[u8; 48]>,
     pub(crate) writes: Option<WriteKeys>,
+    /// Next unused client write (send) sequence number for AEAD nonces.
+    /// Increments exactly once upon successful sealing of the client confirm
+    /// (`ClientSendFinishClient`). Exported to transport via `complete()`.
     pub(crate) next_cli_write: Seq,
+    /// Next unused server write (send) sequence number for AEAD nonces.
+    /// Increments exactly once upon successful sealing of the server confirm
+    /// (`ServerSendFinishServer`). Exported to transport via `complete()`.
     pub(crate) next_srv_write: Seq,
+    /// Next expected client confirm read sequence (`ServerRecvFinishClient`).
+    /// Advances only after successful verify; never exported (internal only).
     pub(crate) next_cli_read: Seq,
+    /// Next expected server confirm read sequence (`ClientRecvFinishServer`).
+    /// Advances only after successful verify; never exported (internal only).
     pub(crate) next_srv_read: Seq,
 }
 
@@ -168,7 +178,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
             .map_err(|_| {
                 ApplicationHandshakeError::ValidationError("crypto: seal-confirm failed".into())
             })?;
-        seq.0 += 1;
+        seq.0 += 1; // sequence advancement (write path) — see state_machine.md#detailed-sequence-semantics-expanded
         Ok(tag)
     }
 
@@ -187,7 +197,7 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
             .map_err(|_| {
                 ApplicationHandshakeError::ValidationError("crypto: verify-confirm failed".into())
             })?;
-        seq.0 += 1;
+        seq.0 += 1; // sequence advancement (read path) — see state_machine.md#detailed-sequence-semantics-expanded
         Ok(())
     }
 
@@ -489,6 +499,9 @@ impl<C: KeySink, T: TranscriptPort, A: AeadSeal, W: HandshakeWire> HandshakeFsm<
     /// - Only valid (stable) once the FSM reached `HandshakeState::ReadyToComplete` or `Complete`.
     /// - Calling earlier returns an `invalid state: transcript-hash` error to prevent
     ///   accidental channel binding on a non-final transcript.
+    /// # Errors
+    /// Returns `ApplicationHandshakeError::ValidationError` if not in
+    /// `HandshakeState::ReadyToComplete` or `Complete`.
     pub fn transcript_hash(&self) -> Result<[u8; 48], ApplicationHandshakeError> {
         match self.state {
             HandshakeState::ReadyToComplete | HandshakeState::Complete => {
