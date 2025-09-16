@@ -297,7 +297,88 @@ Rekey cutover:
 * Receiver selects key: if `seq ≤ old_last_seq` use old key else new key; decryption failure ⇒ DECRYPT_FAIL.
 * Old key material SHOULD be retained until all frames with `seq ≤ old_last_seq` processed.
 
-Epoch safety caps (directional): rekey MUST occur before sending > 64 MiB plaintext OR > 2^31 frames in one epoch, regardless of normal thresholds.
+Epoch safety cap (directional, normative): rekey MUST occur before sending > 64 MiB plaintext in one epoch (hard byte ceiling). Frame-count based caps MAY be added by implementations as a defense-in-depth heuristic (e.g. rekey before 2^31 frames) but are NOT mandated in v1.
+
+#### 6.3.1 Directional Nonce State Machine
+
+Each channel direction maintains an independent nonce state consisting of:
+* `epoch` (uint64) – monotonically increasing on each successful rekey (starts at 0).
+* `salt` (16 bytes) – AEAD nonce prefix (XChaCha20-Poly1305 uses 24-byte nonce = 16-byte prefix || 8-byte little-endian counter).
+* `seq` (uint64 counter) – incremented per protected frame; the value **before** increment is used as the 64-bit suffix. It MUST be strictly monotonic within an epoch.
+* `bytes_since_rekey` (uint64) – cumulative plaintext bytes sealed in current epoch.
+* `soft_size_fired` (bool) – tracks whether the soft size hint has been emitted this epoch.
+
+Nonce allocation (per frame about to seal `len` plaintext bytes):
+1. If `bytes_since_rekey >= hard_bytes` → reject with REKEY_REQUIRED (no allocation).
+2. If `seq == 2^64 - 1` → reject with EXHAUSTED (should be unreachable under mandated rekey policy).
+3. Allocate current `(salt, seq)`; increment internal `seq` and add `len` to `bytes_since_rekey`.
+4. Emit hints (see below) alongside the allocation.
+5. If post-allocation `bytes_since_rekey > hard_bytes` → treat as REKEY_REQUIRED error for the caller (the just‑allocated frame MUST NOT be sent; callers SHOULD derive & install new epoch and reissue send under epoch+1).
+
+Hint semantics (returned with successful allocation):
+* `soft_rekey_hint` (size) – fires once when `bytes_since_rekey >= soft_bytes` (first crossing only). Resets after rekey.
+* `time_rekey_hint` (time) – becomes true once `elapsed_time >= soft_time` since epoch start and remains true for the rest of that epoch (persistent flag; simplifies lazy polling). Time measurement uses wall clock; implementations SHOULD tolerate modest skew.
+
+Boundary behavior (normative):
+* A frame that brings `bytes_since_rekey` exactly to `hard_bytes` is allowed; the **next** allocation attempt (even with `len = 0`) MUST return REKEY_REQUIRED.
+* Hints are advisory; senders SHOULD initiate rekey promptly but MAY coalesce a small tail of frames (< soft_bytes remainder) provided they do not cross `hard_bytes`.
+
+Default policy thresholds (normative unless operator overrides):
+* `soft_bytes` = 1 MiB
+* `soft_time` = 30 s
+* `hard_bytes` = 64 MiB
+
+Salt & key derivation (overview – see §3 for labels):
+* Initial epoch (0): `k_ch_c2s_0`, `k_ch_s2c_0`, and corresponding nonce salts derived from `ch_root[i]` using distinct HKDF labels:
+	* `HKDF-Expand(ch_root[i], "qsh v1 ch nonce" || dir || uint64(epoch), 16)` where `dir` is 0x00 (client→server) or 0x01 (server→client) and `epoch` is 0 for initial keys.
+* Rekey epoch N→N+1 (directional):
+	* New traffic key: `k_ch' = HKDF-Expand(k_ch, "qsh v1 ch rekey" || uint64(rekey_counter), 32)` (existing spec §6.3).
+	* New salt: recompute with same base root OR derive via chaining (implementation option) ensuring uniqueness: `HKDF-Expand(ch_root[i], "qsh v1 ch nonce" || dir || uint64(epoch+1), 16)`.
+	* Implementations MUST NOT reuse a prior `(salt, epoch)` tuple for the same direction.
+
+Rationale:
+* Size + time dual triggers cover both high-throughput and idle-long-lived channels.
+* Single-fire size hint avoids repeated control chatter when streaming large data.
+* Persistent time hint prevents missing a narrow timing window if the application polls infrequently.
+* 64 MiB hard ceiling bounds nonce/key lifetime well below practical cryptanalytic limits while keeping rekey control overhead low.
+* Explicit salt derivation with epoch counter prevents silent key/nonce reuse across epochs even if an application mis-orders operations.
+
+Security considerations:
+* Nonce uniqueness depends on (salt, seq) pairs never repeating under the same key. Distinct salts per epoch plus monotonic counters satisfy this.
+* Counter wrap (`2^64`) is theoretically unreachable before `hard_bytes` triggers many orders of magnitude earlier; attempting to allocate beyond wrap MUST hard fail.
+* A delayed rekey (ignoring both hints) that reaches `hard_bytes` MUST stop further sending until a rekey completes; sending anyway is a PROTOCOL_ERROR condition at the channel scope.
+
+Telemetry (RECOMMENDED):
+Implementations SHOULD surface per-direction counters: `epochs`, `rekeys_scheduled`, `rekeys_completed`, `soft_size_hints`, `soft_time_hints`, `hard_limit_blocks` to aid capacity planning and anomaly detection.
+
+##### 6.3.1.1 Threshold Rationale (Non‑Normative)
+
+Why 1 MiB / 30 s soft vs 64 MiB hard?
+
+Purpose separation:
+* Soft thresholds drive routine forward secrecy rotation with minimal overhead and a small compromise window (≈1 MiB of plaintext or 30 s of interaction). They are *targets* for healthy operation.
+* The hard ceiling is a safety guardrail ensuring that even if rekey orchestration stalls (scheduler delay, congestion, transient backpressure) a single key epoch cannot silently extend to arbitrarily large data volumes.
+
+Operational slack:
+* A wide gap avoids spurious fatal send failures when a hint fires but control frames (REKEY_REQ/ACK) are momentarily delayed.
+* Tight coupling (e.g. hard=2×soft) would force aggressive preemption logic and raise risk of hitting the hard stop during short stalls, harming reliability more than it improves secrecy.
+
+Security margin:
+* 64 MiB remains far below practical cryptanalytic usage limits for XChaCha20-Poly1305; reducing the window further yields diminishing returns relative to increased operational complexity.
+* Counter wrap (2^64) is astronomically distant; bounding bytes—not counter space—is the realistic safety concern.
+
+Forward secrecy trade‑off:
+* Smaller hard caps increase rekey frequency (more control chatter, more HKDF work) without materially shrinking exposure if operators already honor the soft hints.
+* Larger caps (>64 MiB) offer negligible operational simplification yet expand worst‑case exposure if a bug suppresses hints.
+
+Configurability:
+* Deployments MAY tune these (e.g., high‑throughput bulk channels increase `soft_bytes`; latency‑critical interactive shells could *lower* it). Any change MUST preserve: `0 < soft_bytes < hard_bytes` and ensure application logic can rekey before reaching `hard_bytes` under expected load.
+
+Future adjustments:
+* If measurements show rekey orchestration is consistently sub‑millisecond and low overhead, a narrower default ratio (e.g., 1 MiB / 16 MiB) could be considered in a minor revision; such a change would remain wire‑compatible.
+
+Summary: The disparity intentionally balances strong forward secrecy (soft triggers) with resilience to transient delays (ample slack) while maintaining a conservative absolute lifetime cap per key epoch.
+
 
 ### 6.4 AEAD Associated Data (AAD)
 
