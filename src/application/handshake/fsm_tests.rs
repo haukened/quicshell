@@ -159,23 +159,6 @@ fn new_server_ok() -> HandshakeFsm<DummyConn, DummyTranscript, DummyAead, OkWire
 
 // --------------- Tests ---------------
 
-fn th<C, T, A, W>(fsm: &mut HandshakeFsm<C, T, A, W>) -> [u8; 48]
-where
-    C: KeySink,
-    T: TranscriptPort,
-    A: AeadSeal,
-    W: HandshakeWire,
-{
-    if !matches!(
-        fsm.state(),
-        HandshakeState::ReadyToComplete | HandshakeState::Complete
-    ) {
-        fsm.ready();
-    }
-    fsm.transcript_hash()
-        .expect("transcript_hash accessible after forced ready")
-}
-
 #[test]
 fn wire_encode_failure_propagates() {
     let mut fsm = HandshakeFsm::new(
@@ -395,13 +378,9 @@ fn transcript_sync_end_to_end() {
     let accept = mk_accept();
     server.on_server_send_accept(&accept).unwrap();
     client.on_accept(&accept).unwrap();
-    // Hashes equal after ACCEPT.
-    let th_client_pre = th(&mut client);
-    let th_server_pre = th(&mut server);
-    assert_eq!(
-        th_client_pre, th_server_pre,
-        "transcript mismatch after ACCEPT"
-    );
+    // After ACCEPT we are NOT yet ReadyToComplete; transcript_hash must be unavailable.
+    assert!(client.transcript_hash().is_err());
+    assert!(server.transcript_hash().is_err());
     let shared = b"sync-shared";
     client.set_hybrid_shared(shared);
     server.set_hybrid_shared(shared);
@@ -409,8 +388,9 @@ fn transcript_sync_end_to_end() {
     server.on_finish_client(&fc).unwrap();
     let fs = server.build_finish_server(mk_finish_server()).unwrap();
     client.on_finish_server(&fs).unwrap();
-    let th_client_final = th(&mut client);
-    let th_server_final = th(&mut server);
+    // Now both sides should be ReadyToComplete and transcript_hash must succeed.
+    let th_client_final = client.transcript_hash().unwrap();
+    let th_server_final = server.transcript_hash().unwrap();
     assert_eq!(
         th_client_final, th_server_final,
         "final transcript hashes diverged"
