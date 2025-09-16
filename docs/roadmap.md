@@ -9,33 +9,45 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 
 ## Stage 1: Foundation (MVP) — v1 Scope
 
-- [x] Core handshake (deterministic CBOR: HELLO / ACCEPT / FINISH*, transcript hashing, pad stripping)
+- **Core handshake** (deterministic CBOR: HELLO / ACCEPT / FINISH*, transcript hashing, pad stripping)
   - [x] Hybrid KEM (X25519 + ML-KEM-768) domain types (crypto ops/integration pending)
   - [x] Hybrid signatures (Ed25519 + ML-DSA-44) domain types (verification integration pending)
   - [x] HKDF-SHA-384 label scaffolding (transcript / constant usage present; full key schedule wiring TBD)
-  - [ ] XChaCha20-Poly1305 for data + confirm tags
-    - [x] AEAD port (`AeadSeal` trait, key/nonce newtypes)
-    - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
-    - [x] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
-  - [x] Confirm tag sealing/verification using transcript AAD helpers
-  - [x] Directional nonce/sequence manager with reuse/overflow detection *(implementation + spec §6.3.1; HKDF epoch rekey helpers tracked under rekey implementation task)*
-    - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
-    - [ ] Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)
-    - [ ] Integration tests: full handshake -> encrypted payload + confirm tags
-    - [x] Handshake FSM skeleton (state enum, role checks, transitions)
-    - [x] FSM guards (role crossover prevention, no regression, enforced path)
+  - [x] Handshake FSM skeleton (state enum, role checks, transitions)
+  - [x] FSM guards (role crossover prevention, no regression, enforced path)
   - [x] FSM transcript integration (absorb canonical CBOR, pad-stripped)
   - [x] FSM confirm-tag verification via AEAD adapter
-    - [ ] FSM timeout / cancellation handling
-    - [ ] FSM rekey orchestration (propose/ack/cutover states)
-- [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
-- [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
-- [ ] Per-direction rekey (1 MiB / 30 s)
-- [ ] Environment sanitization & limits
-- [~] Adaptive padding (handshake message pad field & stripping implemented; keepalive cadence not yet)
-- [ ] Error code registry & escalation rules
-- [ ] Exporter interface
-- [ ] Logging modes (privacy-minimal, standard, enterprise)
+  - [ ] FSM timeout / cancellation handling
+  - [ ] FSM rekey orchestration (propose/ack/cutover states)
+
+- **XChaCha20-Poly1305 for data + confirm tags**
+  - [x] AEAD port (`AeadSeal` trait, key/nonce newtypes)
+  - [x] XChaCha20-Poly1305 adapter (16B salt + 8B seq -> 24B nonce) + unit tests
+  - [x] Key schedule derivation (HKDF: directional AEAD keys + salts from transcript hash)
+  - [x] Confirm tag sealing/verification using transcript AAD helpers
+  - [x] Directional nonce/sequence manager with reuse/overflow detection *(spec §6.3.1; epoch HKDF tracked below)*
+  - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
+  - **Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)**
+    - [ ] HKDF epoch helpers (derive new directional key + nonce salt)
+    - [ ] REKEY_REQ / REKEY_ACK control frame encoding & dispatch
+    - [ ] Cutover logic (old-key acceptance window, seq boundary)
+    - [ ] NonceSeqError -> channel event mapping
+    - [ ] Metrics/logging (hints, rekeys, hard-limit blocks)
+    - [ ] Low-threshold forced rekey tests (size + time)
+    - [ ] Simultaneous initiation race resolution test
+    - [ ] Integration tests: full handshake -> encrypted payload + confirm tags
+
+- **Channel + Transport Foundations**
+  - [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
+  - [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
+  - [ ] Per-direction rekey (1 MiB / 30 s) *(operational policy wiring)*
+
+- **Platform & Policy**
+  - [ ] Environment sanitization & limits
+  - [~] Adaptive padding (handshake message pad field & stripping implemented; keepalive cadence not yet)
+  - [ ] Error code registry & escalation rules
+  - [ ] Exporter interface
+  - [ ] Logging modes (privacy-minimal, standard, enterprise)
 
 ---
 
