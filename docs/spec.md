@@ -210,7 +210,8 @@ FINISH_SERVER (server → client)
 ```
 hs_secret      = HKDF-Extract(SHA-384, combined_kem_secret, "qsh v1 hs")
 app_secret     = HKDF-Expand(hs_secret, "qsh v1 app", L_app)
-ch_root[i]     = HKDF-Expand(app_secret, "qsh v1 ch root" || encode_varint(stream_id), L_root)
+# Per-channel root: channel_id allocated via OPEN on control channel (bidirectional model)
+ch_root[i]     = HKDF-Expand(app_secret, "qsh v1 ch root" || encode_varint(channel_id), L_root)
 # Initial directional traffic keys (epoch 0):
 k_ch_c2s_0     = HKDF-Expand(ch_root[i], "qsh v1 ch key c2s", 32)
 k_ch_s2c_0     = HKDF-Expand(ch_root[i], "qsh v1 ch key s2c", 32)
@@ -245,7 +246,7 @@ Key / length constants (normative):
 * Export interface derives outputs directly from `app_secret` per request (no persistent `export_secret`).
 * `L_root` = 32 bytes (per-channel root output length)
 * Directional traffic AEAD keys = 32 bytes; nonce prefixes = 16 bytes
-* `encode_varint(stream_id)` uses QUIC variable-length integer encoding (RFC 9000). Stream IDs in QUIC already embed initiator parity (even=client, odd=server).
+* `encode_varint(channel_id)` uses QUIC variable-length integer encoding (RFC 9000). Parity (even=client initiated, odd=server initiated) is an **allocation rule only**; channels are FULL‑DUPLEX. A logical channel is opened explicitly by an `open` frame on the control channel before any associated bidirectional QUIC stream data is exchanged.
 * Host and user certificate chains MUST be CBOR arrays even if length 1.
 * `user_auth` MUST include exactly one of `raw_keys` or `user_cert_chain`.
 
@@ -253,9 +254,19 @@ Key / length constants (normative):
 
 ## 6. Channels
 
-Multiplex multiple logical channels per connection.
-* QUIC: each bidirectional stream (even=client init, odd=server) is a channel; stream 0 MAY carry control only.
-* TCP fallback (Stage 2): single TLS connection with QUIC varint framed substreams.
+Multiplex multiple **bidirectional** logical channels per connection. A channel provides a full‑duplex flow (both directions share the same channel_id) with independent directional keys, nonces, and rekey triggers.
+
+Control‑first model (normative):
+1. Initiator sends `open` frame on the **control channel (channel_id 0)** proposing a new `channel_id` (parity enforced: even → client initiated, odd → server initiated) and specifying `kind` plus optional metadata (e.g. command, env, winsize).
+2. Receiver validates, allocates local resources, and replies `accept` (or `reject`).
+3. Only after `accept` may either side begin sending DATA frames associated with that channel. Implementations MAY map each accepted channel to a dedicated QUIC bidirectional stream for transport efficiency and to avoid head‑of‑line blocking; the mapping is local and not directly exposed on the wire beyond consistent channel_id usage in frame AAD.
+
+Rationale:
+* Explicit OPEN before transport usage supports validation, future negotiation, and rejection without burning a stream.
+* Bidirectional semantics align with QUIC streams, eliminating the need to pair separate unidirectional IDs.
+* Parity becomes an *initiator identity* marker, not a direction indicator; direction for cryptography is determined by client→server vs server→client flow inside a channel.
+
+TCP fallback (Stage 2): single connection with varint framed substreams; the same control‑first OPEN/ACCEPT applies.
 
 ### 6.1 Channel Types
 
@@ -271,12 +282,12 @@ Future:
 ### 6.2 Control / Data Frames (deterministic CBOR)
 
 ```
-OPEN { id, kind, cmd?, env?, winsize?, pad? }
-ACCEPT { id, features, initial_window }
-REJECT { id, code, reason? }
-DATA { id, seq, ciphertext }         # seq uint64 (wrap modulo 2^64)
-CTRL { id, signal, payload? }        # signals: WINCH, SIGINT, EOF, CLOSE, WINDOW_UPDATE, EXIT
-REKEY_REQ { id, counter }
+OPEN { id, kind, cmd?, env?, winsize?, pad? }          # sent on control (channel 0)
+ACCEPT { id, features, initial_window }                # sent on control
+REJECT { id, code, reason? }                          # sent on control
+DATA { id, seq, ciphertext }                          # id != 0, encrypted payload frames
+CTRL { id, signal, payload? }                         # id != 0 (or 0 for control-scoped signals)
+REKEY_REQ { id, counter }                             # id of target channel (0 allowed for global future use)
 REKEY_ACK { id, counter }
 ```
 
@@ -317,7 +328,7 @@ Unknown frame types ⇒ connection-scope PROTOCOL_ERROR.
 
 `ACCEPT.features` are advisory hints (unknown ignored). Tokens like `resize`, `utf8`, `color256` signal support only.
 
-DATA sequence numbers: start at 0; wrap forbidden. Soft threshold `seq ≥ 2^63` SHOULD prompt graceful channel replacement before overflow.
+DATA sequence numbers: start at 0 per **direction**; wrap forbidden. Strict monotonicity is enforced (gap or replay ⇒ PROTOCOL_ERROR channel scope). Soft threshold `seq ≥ 2^63` SHOULD prompt graceful channel replacement before overflow.
 
 ### 6.3 Rekeying
 
@@ -372,8 +383,8 @@ Default policy thresholds (normative unless operator overrides):
 * `hard_bytes` = 64 MiB
 
 Salt & key derivation (overview – see §3 for labels):
-* Initial epoch (0): `k_ch_c2s_0`, `k_ch_s2c_0`, and corresponding nonce salts derived from `ch_root[i]` using distinct HKDF labels:
-	* `HKDF-Expand(ch_root[i], "qsh v1 ch nonce" || dir || uint64(epoch), 16)` where `dir` is 0x00 (client→server) or 0x01 (server→client) and `epoch` is 0 for initial keys.
+* Initial epoch (0): `k_ch_c2s_0`, `k_ch_s2c_0`, and corresponding nonce salts derived from `ch_root[i]` (per‑channel root) using distinct HKDF labels:
+	* `HKDF-Expand(ch_root[i], "qsh v1 ch nonce" || dir || uint64(epoch), 16)` where `dir` is 0x00 (client→server) or 0x01 (server→client) and `epoch` is 0.
 * Rekey epoch N→N+1 (directional):
 	* New traffic key: `k_ch' = HKDF-Expand(k_ch, "qsh v1 ch rekey" || uint64(rekey_counter), 32)` (existing spec §6.3).
 	* New salt: recompute with same base root OR derive via chaining (implementation option) ensuring uniqueness: `HKDF-Expand(ch_root[i], "qsh v1 ch nonce" || dir || uint64(epoch+1), 16)`.
