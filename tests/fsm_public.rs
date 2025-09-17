@@ -1,10 +1,10 @@
 //! Integration-style tests exercising public FSM methods with real domain message constructors.
 
-use quicshell::application::TranscriptPort;
 use quicshell::application::handshake::errors::ApplicationHandshakeError;
 use quicshell::application::handshake::fsm::{HandshakeFsm, HandshakeState, Role};
 use quicshell::domain::handshake::{Accept, FinishClient, FinishServer, Hello, UserAuth};
 use quicshell::ports::crypto::{AeadError, AeadKey, AeadSeal, NonceSalt, Seq};
+use quicshell::ports::handshake::TranscriptPort;
 use quicshell::protocol::handshake::keyschedule::{DirectionKeys, WriteKeys};
 use quicshell::protocol::handshake::wire::adapter::WireAdapter;
 use quicshell::test_support::{mk_cap, mk_kem, mk_keys, mk_nonce};
@@ -75,7 +75,7 @@ impl AeadSeal for DummyAead {
     }
 }
 
-impl quicshell::application::handshake::fsm::KeySink for DummyConn {
+impl quicshell::ports::handshake::KeySink for DummyConn {
     fn install_write_keys(&mut self, keys: WriteKeys) {
         self.client = Some(keys.client);
         self.server = Some(keys.server);

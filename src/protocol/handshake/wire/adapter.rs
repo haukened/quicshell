@@ -1,4 +1,4 @@
-use crate::application::handshake::ports::{HandshakeTranscriptRef, HandshakeWire, WireError};
+use crate::ports::handshake::{HandshakeTranscriptRef, HandshakeWire, WireError};
 use crate::protocol::handshake::wire::{
     encode_transcript_accept, encode_transcript_finish_client, encode_transcript_finish_server,
     encode_transcript_hello,

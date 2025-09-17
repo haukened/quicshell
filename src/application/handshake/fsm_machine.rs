@@ -1,12 +1,11 @@
-use crate::application::handshake::{
-    ApplicationHandshakeError, HandshakeTranscriptRef, HandshakeWire,
-};
+use crate::application::handshake::ApplicationHandshakeError;
 use crate::domain::handshake::{Accept, FinishClient, FinishServer, Hello};
 use crate::ports::crypto::{AEAD_TAG_LEN, AeadSeal, Seq};
+use crate::ports::handshake::{HandshakeTranscriptRef, HandshakeWire, KeySink, TranscriptPort};
 use crate::protocol::handshake::keyschedule::{DirectionKeys, WriteKeys, derive_keys, prk_from};
 use crate::protocol::handshake::transcript::aad::{ConfirmRole, confirm_aad};
 
-use super::fsm_types::{HandshakeEvent, HandshakeState, KeySink, Role, TranscriptPort};
+use super::fsm_types::{HandshakeEvent, HandshakeState, Role};
 
 /// Orchestrates the qsh handshake flow (HELLO → ACCEPT → FINISH*) while
 /// maintaining the transcript hash, performing lazy key derivation and

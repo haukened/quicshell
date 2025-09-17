@@ -1,8 +1,10 @@
 #![allow(clippy::missing_errors_doc)]
 use super::*;
 use crate::application::handshake::ApplicationHandshakeError;
-use crate::application::handshake::ports::{HandshakeTranscriptRef, HandshakeWire, WireError};
 use crate::ports::crypto::{AEAD_TAG_LEN, AeadError, AeadKey, AeadSeal, NonceSalt, Seq};
+use crate::ports::handshake::{
+    HandshakeTranscriptRef, HandshakeWire, KeySink, TranscriptPort, WireError,
+};
 use crate::protocol::handshake::keyschedule::{DirectionKeys, WriteKeys};
 use crate::test_support::support::{mk_accept, mk_finish_client, mk_finish_server, mk_hello};
 

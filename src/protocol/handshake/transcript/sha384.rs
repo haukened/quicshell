@@ -1,4 +1,4 @@
-use crate::application::handshake::TranscriptPort;
+use crate::ports::handshake::TranscriptPort;
 
 pub struct Sha384Transcript {
     h: [u8; 48],
@@ -26,7 +26,7 @@ impl TranscriptPort for Sha384Transcript {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::handshake::TranscriptPort;
+    use crate::ports::handshake::TranscriptPort;
     use sha2::{Digest, Sha384};
 
     // Helper to create a fresh transcript with zero state.
