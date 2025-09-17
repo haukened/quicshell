@@ -26,7 +26,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
   - [x] Directional nonce/sequence manager with reuse/overflow detection *(spec §6.3.1; epoch HKDF tracked below)*
   - [ ] Channel integration (wrap channel I/O in AEAD seal/open)
   - **Rekey implementation (ADR-0009 chained HKDF; volume/time triggers)**
-    - [ ] HKDF epoch helpers (derive new directional key + nonce salt)
+    - [x] HKDF epoch helpers (derive new directional key + nonce salt)
     - [ ] REKEY_REQ / REKEY_ACK control frame encoding & dispatch
     - [ ] Cutover logic (old-key acceptance window, seq boundary)
     - [ ] NonceSeqError -> channel event mapping
