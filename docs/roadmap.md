@@ -39,8 +39,32 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 
 - **Channel + Transport Foundations**
   - [ ] QUIC transport (ALPN `qshq/1`) even=client / odd=server streams
-  - [ ] Channels: TTY + EXEC (EXIT status via CTRL EXIT)
-  - [ ] Per-direction rekey (1 MiB / 30 s) *(operational policy wiring)*
+    - [ ] Transport adapter skeleton (quinn config, connect, open streams)
+    - [ ] Parity mapping enforcement & error mapping (conn/stream -> channel errors)
+  - **Channel Core**
+    - [ ] Domain model: `ChannelId` (reserve 0 = Control; enforce parity on dynamic ids), `ChannelType` (Control, Tty), `ChannelState` (Init, Open, Closing, Closed, Error)
+    - [ ] Supervisor & registry (id allocation, lifecycle transitions, cleanup)
+    - [ ] Channel ports (traits): `ChannelTx`, `ChannelRx`, `ChannelControl`, `Multiplexer`
+  - **Protocol Frames (Stage 1 subset)**
+    - [ ] OPEN, DATA, CLOSE (channel > 0)
+    - [ ] CONTROL (channel 0) carrying: REKEY_REQ, REKEY_ACK, TERM_RESIZE placeholder
+    - [ ] Round‑trip encode/decode tests (canonical ordering)
+  - **Channel Crypto (epoch 0 + rekey)**
+    - [ ] `ChannelCrypto` wrapper (AEAD key, tx/rx `DirectionalNonceM`)
+    - [ ] Seal/open helpers (AAD = frame header canonical CBOR bytes)
+    - [ ] Rekey HKDF + minimal cutover; nonce exhaustion mapping (fatal vs rekey trigger)
+  - **Dispatcher & I/O**
+    - [ ] Reader loop (demux -> decrypt -> frames -> supervisor)
+    - [ ] Writer loop (gather -> encrypt -> send) with bounded outbound queue
+  - **TTY Channel**
+    - [ ] Minimal PTY abstraction (mock/stub acceptable in Stage 1)
+    - [ ] DATA wiring and CLOSE on EOF
+  - **Testing & Docs**
+    - [ ] Unit: domain transitions, frame determinism, crypto monotonicity
+    - [ ] Integration: handshake -> open -> data -> rekey -> close
+    - [ ] Rustdoc & spec draft updates (channel lifecycle + frame subset)
+  - **Minimal Logging**
+    - [ ] channel_open, channel_close, rekey_events, error paths
 
 - **Platform & Policy**
   - [ ] Environment sanitization & limits
@@ -56,6 +80,9 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 - [ ] TCP/TLS fallback (ALPN `qsht/1`) with QUIC-varint mux
 - [ ] Channel: QFTP (formerly SFTP) minimal file protocol (single channel multiplex)
 - [ ] Enhanced flow control tuning
+ - [ ] EXEC channel + EXIT_STATUS frame
+ - [ ] WINDOW frame + basic per-channel flow control & backpressure queue
+ - [ ] Multi-channel scaling, improved dispatcher metrics/logging (frame/byte counters)
 
 ---
 
@@ -66,6 +93,9 @@ It reflects both the **protocol specification** and the **Rust reference impleme
 - [ ] Host key rotation (signed rotation object, grace overlap)
 - [ ] Audit logs (per-channel MAC chain)
 - [ ] Optional `revocation_policy` advisory hint ("none"|"soft"|"hard")
+ - [ ] Advanced channel metrics (histograms, high-cardinality labels)
+ - [ ] PTY resize events & enhanced terminal UX
+ - [ ] Adaptive backpressure heuristics & dynamic window adjustments
 
 ---
 
