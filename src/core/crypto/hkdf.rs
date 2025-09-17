@@ -332,6 +332,49 @@ mod tests {
         assert_eq!(ours, theirs);
     }
 
+    // --- KAT (Known-Answer Tests) for HKDF-SHA-384 (derived from this implementation & cross-checked) ---
+    // These vectors are fixed to lock in behavior; altering HKDF logic must update them consciously.
+    // Case 1
+    const KAT1_PRK_HEX: &str = "c720758fc9a8e9b3449f45507e277625a240f85484a344f7dd8c9460f15faf37f7b1b15bb4243e9f032af3888dc69593";
+    const KAT1_OKM_HEX: &str =
+        "13a9af5c60fd046b477ce517b109446ebd6409f793bc6d79d4fae6de992c5a0687adea7e63c15441dce3"; // 42 bytes
+
+    // Case 2 (longer IKM + 100-byte OKM).
+    const KAT2_PRK_HEX: &str = "55e57a40f55b2d146351b7af149fb7f705e623feb55bee7a54a743a9f9bb39ae28fa124b9106db6553e81122b0bd1084";
+    const KAT2_OKM_HEX: &str = "f911adac7c7ea4ddbe7f7cd34d719d4167d0f971769e5c6ec200cb36f3eca340f2f2bbe7b27c3d42424f0092aa74d0821f35cf7c156a42395d884d8de0c37433361a4275e194e5f53f33a767286f26dd1b0872cfae8e7d1a1c1edc866512a16047b36ba7"; // 100 bytes
+
+    fn decode_hex(s: &str) -> Vec<u8> {
+        assert!(s.len() % 2 == 0, "hex length even");
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    #[test]
+    fn kat_sha384_case1() {
+        let ikm = b"ikm-kat-1";
+        let salt = b"salt-kat-1";
+        let info = b"info-kat-1";
+        let prk = hkdf_extract(salt, ikm);
+        let mut okm = [0u8; 42];
+        hkdf_expand(info, &prk, &mut okm).unwrap();
+        assert_eq!(decode_hex(KAT1_PRK_HEX), prk);
+        assert_eq!(decode_hex(KAT1_OKM_HEX), okm);
+    }
+
+    #[test]
+    fn kat_sha384_case2() {
+        let ikm = b"ikm-kat-2-which-is-longer";
+        let salt = b"salt-kat-2";
+        let info = b"info-kat-2";
+        let prk = hkdf_extract(salt, ikm);
+        let mut okm = [0u8; 100];
+        hkdf_expand(info, &prk, &mut okm).unwrap();
+        assert_eq!(decode_hex(KAT2_PRK_HEX), prk);
+        assert_eq!(decode_hex(KAT2_OKM_HEX), okm);
+    }
+
     #[test]
     fn expand_equivalence_multi_block() {
         use hkdf::Hkdf;

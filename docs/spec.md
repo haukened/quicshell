@@ -93,6 +93,49 @@ Forbidden Deviations
 - Hybrid algorithm public labels (documentation only) use lowercase concatenation without separators (e.g. `x25519+mlkem768`, `ed25519+mldsa44`). These labels NEVER appear on the wire in v1.
 - ALPN tokens (`qshq/1`, `qsht/1`) are lowercase and versioned; future modes (e.g. PQ-only) will use distinct ALPNs (e.g. `qshq/1-pq`).
 
+### 3.1 Test Vectors (Normative)
+
+Implementations MUST reproduce these values exactly. Hex is lowercase, no whitespace. HKDF = HKDF-SHA-384 (RFC5869). `encode_varint(7)` = `07`.
+
+HKDF Case 1 (42-byte OKM):
+```
+IKM  = 696b6d2d6b61742d31                      ("ikm-kat-1")
+salt = 73616c742d6b61742d31                    ("salt-kat-1")
+info = 696e666f2d6b61742d31                    ("info-kat-1")
+PRK  = c720758fc9a8e9b3449f45507e277625a240f85484a344f7dd8c9460f15faf37f7b1b15bb4243e9f032af3888dc69593
+OKM  = 13a9af5c60fd046b477ce517b109446ebd6409f793bc6d79d4fae6de992c5a0687adea7e63c15441dce3
+```
+
+HKDF Case 2 (100-byte OKM):
+```
+IKM  = 696b6d2d6b61742d2d77686963682d69732d6c6f6e676572 ("ikm-kat-2-which-is-longer")
+salt = 73616c742d6b61742d32                           ("salt-kat-2")
+info = 696e666f2d6b61742d32                           ("info-kat-2")
+PRK  = 55e57a40f55b2d146351b7af149fb7f705e623feb55bee7a54a743a9f9bb39ae28fa124b9106db6553e81122b0bd1084
+OKM  = f911adac7c7ea4ddbe7f7cd34d719d4167d0f971769e5c6ec200cb36f3eca340f2f2bbe7b27c3d42424f0092aa74d0821f35cf7c156a42395d884d8de0c37433361a4275e194e5f53f33a767286f26dd1b0872cfae8e7d1a1c1edc866512a16047b36ba7
+```
+
+Per-Channel Derivation (channel_id = 7, `app_secret = 0xa5 * 32`):
+```
+app_secret = a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5
+channel_id = 7
+ch_root    = 711254ce32395a86476fad07c22e2e7e2da8fa3590635a1618a36e9ebfb549f8  (32 bytes)
+
+Directional (epoch 0):
+k_c2s_0 = 7f55b99e886209e542fe03121287024dfcd86de39298a530dc3d45ab7f77dd06
+k_s2c_0 = b9fc950762e8d64876bb9a6d77b9a5fa31346cc1c67f0de38f96a2d6ef5e6ce4
+
+Nonce salts (label: "qsh v1 ch nonce" || dir || uint64_be(epoch)):
+nonce_c2s_epoch0 = d03a55dd8c3e567c21acd77f2daaa3ac
+nonce_c2s_epoch1 = 13fc7a297247189cccaa6f36c995746f
+
+Rekey chaining (c2s direction):
+k_c2s_1 = f24cb9dc7b47231e6ddf09e876dbc8f721f0e903e029c5b40372d2e7a0318ba5  (counter=0)
+k_c2s_2 = cfe1d61a85e3a779f2479512fbfbd8405e78a453e12073af4d9f6a839962081c  (counter=1)
+```
+
+If a divergence occurs, verify: label bytes, direction byte (0x00/0x01), QUIC varint encoding of channel id, and big‑endian encoding of epoch/rekey counters.
+
 ⸻
 
 ## 4. Identity & Trust
