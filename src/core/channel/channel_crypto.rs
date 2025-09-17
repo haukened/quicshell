@@ -75,7 +75,11 @@ impl<A: AeadSeal> ChannelCrypto<A> {
 
     /// Seal (encrypt) a payload buffer in place using next outbound sequence.
     ///
-    /// On success buffer becomes ciphertext||tag. Returns seal outcome with hints.
+    /// On success buffer becomes `ciphertext || tag`. Returns seal outcome with hints.
+    ///
+    /// # Errors
+    /// * Propagates underlying AEAD errors (`ChannelCryptoError::Aead`).
+    /// * Returns `ChannelCryptoError::Nonce` if nonce manager signals rekey / exhaustion.
     pub fn seal(
         &mut self,
         aad: &[u8],
@@ -98,7 +102,11 @@ impl<A: AeadSeal> ChannelCrypto<A> {
 
     /// Open (decrypt) a payload buffer in place with the provided sequence.
     ///
-    /// Enforces strict monotonic sequence (expected = last_seq + 1 or 0 if first).
+    /// Enforces strict monotonic sequence (expected = `last_seq` + 1 or 0 if first).
+    ///
+    /// # Errors
+    /// * `ChannelCryptoError::Replay` if sequence not the expected monotonic value.
+    /// * Propagates underlying AEAD open errors or nonce sequencing errors.
     pub fn open(
         &mut self,
         seq: u64,

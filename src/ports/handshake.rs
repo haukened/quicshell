@@ -51,8 +51,9 @@ pub trait TranscriptPort {
 pub trait HandshakeWire {
     /// Encode canonical (pad-stripped) bytes for any handshake message.
     ///
-    /// Errors:
-    /// - `WireError::Codec` if canonical encoding fails.
+    /// # Errors
+    /// Returns [`WireError::Codec`] if canonical encoding fails (e.g., serializer
+    /// rejects structurally invalid input or deterministic rules are violated).
     fn encode_transcript(&self, msg: HandshakeTranscriptRef<'_>) -> Result<Vec<u8>, WireError>;
 }
 
