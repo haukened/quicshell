@@ -1,4 +1,4 @@
-use crate::core::crypto::hkdf::{HkdfError, hkdf_expand};
+use crate::core::crypto::hkdf::{HkdfError, hkdf_expand, hkdf_extract};
 use crate::ports::crypto::{AeadKey, NonceSalt};
 
 pub const KEY_LEN: usize = 32; // XChaCha20-Poly1305
@@ -32,44 +32,40 @@ pub struct WriteKeys {
 ///
 /// # Errors
 /// Propagates `HkdfError` if HKDF expansion somehow fails (should not with fixed small lengths).
+///
+/// Security notes:
+/// - `AeadKey` derives `Zeroize` and is annotated with `#[zeroize(drop)]`, so key bytes are wiped
+///   when dropped.
+/// - `NonceSalt` remains `Copy` to avoid API churn and aligns with its non-secret nature
+///   (nonce salts are used with public counters). If we later store any secret in it, we can
+///   switch it to `Zeroize` on drop.
 pub fn derive_keys(_th: &[u8; 48], prk: &[u8; 48]) -> Result<WriteKeys, HkdfError> {
     // Current signature assumes PRK already computed from FSM.
 
-    // Client write
-    let mut ck = [0u8; KEY_LEN];
-    hkdf_expand(L_CLIENT_KEY, prk, &mut ck)?;
-    let mut cs = [0u8; SALT_LEN];
-    hkdf_expand(L_CLIENT_SALT, prk, &mut cs)?;
+    // Client write (derive directly into destination buffers)
+    let mut client = DirectionKeys {
+        key: AeadKey([0u8; KEY_LEN]),
+        salt: NonceSalt([0u8; SALT_LEN]),
+    };
+    hkdf_expand(L_CLIENT_KEY, prk, &mut client.key.0)?;
+    hkdf_expand(L_CLIENT_SALT, prk, &mut client.salt.0)?;
 
     // Server write
-    let mut sk = [0u8; KEY_LEN];
-    hkdf_expand(L_SERVER_KEY, prk, &mut sk)?;
-    let mut ss = [0u8; SALT_LEN];
-    hkdf_expand(L_SERVER_SALT, prk, &mut ss)?;
+    let mut server = DirectionKeys {
+        key: AeadKey([0u8; KEY_LEN]),
+        salt: NonceSalt([0u8; SALT_LEN]),
+    };
+    hkdf_expand(L_SERVER_KEY, prk, &mut server.key.0)?;
+    hkdf_expand(L_SERVER_SALT, prk, &mut server.salt.0)?;
 
-    Ok(WriteKeys {
-        client: DirectionKeys {
-            key: AeadKey(ck),
-            salt: NonceSalt(cs),
-        },
-        server: DirectionKeys {
-            key: AeadKey(sk),
-            salt: NonceSalt(ss),
-        },
-    })
+    Ok(WriteKeys { client, server })
 }
 
 /// Convenience to compute PRK directly here (alternate API)
 #[must_use]
 pub fn prk_from(th: &[u8; 48], shared: &[u8]) -> [u8; 48] {
-    // hkdf::Hkdf::new(Some(salt), ikm) already performs Extract.
-    use hkdf::Hkdf;
-    use sha2::Sha384;
-    let hk = Hkdf::<Sha384>::new(Some(th), shared);
-    // Pull out the PRK bytes in a stable form (48 bytes)
-    let mut prk = [0u8; 48];
-    hk.expand(b"", &mut prk).ok();
-    prk
+    // Perform HKDF-Extract with transcript hash as salt and `shared` as IKM.
+    hkdf_extract(th, shared)
 }
 
 #[cfg(test)]

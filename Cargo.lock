@@ -613,6 +613,7 @@ dependencies = [
  "ciborium",
  "dead",
  "hkdf",
+ "hmac",
  "proptest",
  "quinn",
  "rand_chacha",
