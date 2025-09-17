@@ -60,7 +60,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
   - **Testing & Docs**
     - [ ] Unit: domain transitions, frame determinism, crypto monotonicity
     - [ ] Integration: handshake -> open -> data -> rekey -> close
-    - [ ] Rustdoc & spec draft updates (channel lifecycle + frame subset)
+    - [x] Rustdoc & spec draft updates (channel lifecycle + frame subset) *(completed 2025-09-17)*
   - **Minimal Logging**
     - [ ] channel_open, channel_close, rekey_events, error paths
 
