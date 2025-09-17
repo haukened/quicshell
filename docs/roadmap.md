@@ -1,5 +1,3 @@
-markdown
-// filepath: /Users/David.Haukeness/dev/quicshell/docs/roadmap.md
 # QuicShell Roadmap
 
 This roadmap outlines the anticipated development path for **qsh** (QuicShell).  
@@ -47,7 +45,7 @@ It reflects both the **protocol specification** and the **Rust reference impleme
     - [ ] Channel ports (traits): `ChannelTx`, `ChannelRx`, `ChannelControl`, `Multiplexer`
   - **Protocol Frames (Stage 1 subset)**
     - [ ] OPEN, DATA, CLOSE (channel > 0)
-    - [ ] CONTROL (channel 0) carrying: REKEY_REQ, REKEY_ACK, TERM_RESIZE placeholder
+    - [ ] CONTROL (channel 0) carrying: REKEY_REQ, REKEY_ACK, TERM_RESIZE placeholder\
     - [ ] Round‑trip encode/decode tests (canonical ordering)
   - **Channel Crypto (epoch 0 + rekey)**
     - [ ] `ChannelCrypto` wrapper (AEAD key, tx/rx `DirectionalNonceM`)
