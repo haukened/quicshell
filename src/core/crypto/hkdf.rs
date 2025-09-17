@@ -309,4 +309,47 @@ mod tests {
         assert_ne!(k.0, k1.0);
         assert_ne!(k1.0, k2.0);
     }
+
+    // --- Equivalence tests vs hkdf crate (PRK = 48 bytes) ---
+
+    #[test]
+    fn expand_equivalence_single_block() {
+        use hkdf::Hkdf;
+        use sha2::Sha384;
+
+        let ikm = b"expand-eq-ikm-1";
+        let salt = b"salt-1";
+        let prk = hkdf_extract(salt, ikm);
+
+        let info = b"info-abc";
+        let mut ours = [0u8; 32];
+        let mut theirs = [0u8; 32];
+
+        hkdf_expand(info, &prk, &mut ours).unwrap();
+        let hk = Hkdf::<Sha384>::from_prk(&prk).expect("valid PRK len");
+        hk.expand(info, &mut theirs).expect("okm len ok");
+
+        assert_eq!(ours, theirs);
+    }
+
+    #[test]
+    fn expand_equivalence_multi_block() {
+        use hkdf::Hkdf;
+        use sha2::Sha384;
+
+        let ikm = b"expand-eq-ikm-2";
+        let salt = b"salt-2";
+        let prk = hkdf_extract(salt, ikm);
+
+        let info = b"info-xyz";
+        const OUT_LEN: usize = 48 * 3 + 7; // multi-block + remainder
+        let mut ours = [0u8; OUT_LEN];
+        let mut theirs = [0u8; OUT_LEN];
+
+        hkdf_expand(info, &prk, &mut ours).unwrap();
+        let hk = Hkdf::<Sha384>::from_prk(&prk).expect("valid PRK len");
+        hk.expand(info, &mut theirs).expect("okm len ok");
+
+        assert_eq!(ours, theirs);
+    }
 }
