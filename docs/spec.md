@@ -282,13 +282,15 @@ Future:
 ### 6.2 Control / Data Frames (deterministic CBOR)
 
 ```
-OPEN { id, kind, cmd?, env?, winsize?, pad? }          # sent on control (channel 0)
-ACCEPT { id, features, initial_window }                # sent on control
-REJECT { id, code, reason? }                          # sent on control
-DATA { id, seq, ciphertext }                          # id != 0, encrypted payload frames
-CTRL { id, signal, payload? }                         # id != 0 (or 0 for control-scoped signals)
-REKEY_REQ { id, counter }                             # id of target channel (0 allowed for global future use)
-REKEY_ACK { id, counter }
+OPEN { id:uint, kind:"tty"|"exec", cmd?:text, env?:{ text:text, ... }, winsize?:{ cols:uint, rows:uint }, pad?:bstr }
+ACCEPT { id:uint, features:[text,...], initial_window:uint }
+REJECT { id:uint, code:uint, reason?:text }
+CLOSE { id:uint, code:"normal"|"canceled"|"protocol_error"|"resource", reason?:text, pad?:bstr }
+DATA { id:uint, seq:uint, ciphertext:bstr }                # id != 0, encrypted
+CTRL { id:uint, signal:text, payload?:any }                # id != 0 (or 0 for control scope)
+TERM_RESIZE { id:uint, cols:uint, rows:uint, pad?:bstr }   # alias of CTRL winch in structured form
+REKEY_REQ { id:uint, counter:uint }
+REKEY_ACK { id:uint, counter:uint }
 ```
 
 - WINDOW_UPDATE uses CTRL with payload { delta: uint64 } (delta bytes additional credit). 
@@ -300,10 +302,39 @@ On the wire all frame *type* identifiers are lowercase ASCII text strings inside
 { t:"open", id: 4, kind:"exec", cmd:"uname -a", env:{}, pad:h'00' }
 ```
 
-Mandatory OPEN fields by `kind`:
-* `tty`: `kind`, `id`; OPTIONAL: `winsize`, `env`, `pad`
-* `exec`: `kind`, `id`, `cmd`; OPTIONAL: `env`, `pad`
-* Future `qftp` / `pfwd`: specified in later stages (MUST be ignored by v1 if unknown)
+OPEN semantics (normative):
+* `id` MUST have correct parity (even client-initiated, odd server-initiated). Duplicate `id` ⇒ PROTOCOL_ERROR.
+* `kind` enumerates channel behavior. v1 kinds: `tty`, `exec`.
+* `cmd` REQUIRED for `exec`; PROHIBITED for `tty` (presence ⇒ PROTOCOL_ERROR). Length ≤ 256 bytes UTF‑8 NFC.
+* `env` OPTIONAL key/value map. Limits (v1 recommended & enforceable): ≤ 64 entries; each name length 1..=64; each value length ≤ 256. Name uniqueness REQUIRED (duplicate names imply first-wins; implementations SHOULD reject duplicates to reduce ambiguity).
+* `winsize` OPTIONAL for `tty` only; PROHIBITED for `exec`. Structure: `{ cols:uint, rows:uint }` both in 1..=10000.
+* `pad` OPTIONAL opaque bytes (length ≤ 4096). Padding MUST be ignored semantically and excluded from any transcript/hash inputs.
+* Future kinds (`qftp`, `pfwd`, etc.) MUST be ignored (OPEN rejected with UNSUPPORTED_KIND or generic REJECT) by v1 peers; they are reserved for later versions.
+
+Mandatory OPEN fields by `kind` (summary):
+* `tty`: `id`, `kind`; OPTIONAL: `winsize`, `env`, `pad`.
+* `exec`: `id`, `kind`, `cmd`; OPTIONAL: `env`, `pad`.
+* Future: see later revisions (ignore unknown `kind`).
+
+CLOSE semantics (normative):
+* Sent by either peer to initiate/orderly shutdown of a channel.
+* `code` enumerates reason hints:
+	- `normal` – routine completion (EOF / command exit reported separately via `exit` signal).
+	- `canceled` – user or application aborted.
+	- `protocol_error` – channel-scoped violation (connection MAY continue for other channels if isolation safe).
+	- `resource` – resource limit (memory, descriptors, quota) exceeded.
+* `reason` OPTIONAL UTF‑8 (≤ 256 bytes) human hint; NOT for programmatic decisions; MUST NOT leak secret data.
+* After transmitting CLOSE, sender MUST NOT send further DATA frames (MAY emit final control signals that raced with close: `exit`, `window_update`).
+* Receipt of a second CLOSE for the same `id` after already closing MAY be ignored.
+* Padding semantics mirror OPEN.
+
+TERM_RESIZE (a structured alias of CTRL `winch`):
+* Either peer MAY send when terminal dimensions change (only valid for channels of kind `tty`).
+* `cols`, `rows` each 1..=10000. Out-of-range values ⇒ PROTOCOL_ERROR (channel scope) and frame ignored.
+* Frequent resize bursts SHOULD be coalesced (recommended min 30–50 ms interval) to limit overhead.
+* Receivers MUST treat TERM_RESIZE frames arriving before ACCEPT as premature (ignore or queue) but MUST NOT apply them until channel active.
+
+REKEY_REQ / REKEY_ACK: see §6.3 for full procedure. Directional semantics: both directions use the same logical channel id; the frame applies to the channel regardless of direction; key selection derives from direction of transmission.
 
 ACCEPT `features`: CBOR array of lowercase feature tokens (e.g. `[]` for none). Reserved tokens (future): `resize`, `utf8`, `color256`. Unknown features MUST be ignored.
 
@@ -324,11 +355,11 @@ Frame type registry (for AAD frame_type_byte §6.4):
 ```
 Unknown frame types ⇒ connection-scope PROTOCOL_ERROR.
 
-`OPEN.winsize` (if present) = `{ cols:uint, rows:uint }` both 1..=10000. For `tty` optional; for `exec` MUST NOT appear (ignored if supplied).
+`OPEN.winsize` (if present) = `{ cols:uint, rows:uint }` both 1..=10000. For `tty` optional; for `exec` presence is a PROTOCOL_ERROR (MUST be rejected).
 
 `ACCEPT.features` are advisory hints (unknown ignored). Tokens like `resize`, `utf8`, `color256` signal support only.
 
-DATA sequence numbers: start at 0 per **direction**; wrap forbidden. Strict monotonicity is enforced (gap or replay ⇒ PROTOCOL_ERROR channel scope). Soft threshold `seq ≥ 2^63` SHOULD prompt graceful channel replacement before overflow.
+DATA sequence numbers: start at 0 per **direction**; wrap forbidden. Strict monotonicity is enforced (gap or replay ⇒ PROTOCOL_ERROR channel scope). Soft threshold `seq ≥ 2^63` SHOULD prompt graceful channel replacement before overflow. Sequence numbers are independent of AEAD nonce counters (the latter reset on rekey); mismatch across rekey boundaries is resolved via epoch/key selection rules (§6.3).
 
 ### 6.3 Rekeying
 

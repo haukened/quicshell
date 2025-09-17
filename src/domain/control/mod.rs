@@ -10,7 +10,8 @@
 
 pub mod channel;
 pub mod rekey;
-// pub mod window;  // forthcoming
+pub mod window;
 
 pub use channel::{ChannelFrameError, ChannelKind, Close, CloseReasonCode, Open, WinSize};
 pub use rekey::{MAX_PAD_LEN, RekeyAck, RekeyDirection, RekeyFrameError, RekeyReq};
+pub use window::{TermResize, WindowFrameError};
