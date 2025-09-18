@@ -124,7 +124,6 @@ pub struct ChannelSupervisor {
 
 impl ChannelSupervisor {
     /// Create a new supervisor for given role.
-    /// Create a new supervisor for given role.
     ///
     /// # Panics
     /// Panics only if internal `NonZeroU64` construction fails (unreachable for valid start values 1 or 2).
@@ -141,7 +140,6 @@ impl ChannelSupervisor {
         }
     }
 
-    /// Allocate a new dynamic channel id and register it in `Init` state.
     /// Allocate a new dynamic channel id and register it in `Init` state.
     ///
     /// # Errors
@@ -173,7 +171,6 @@ impl ChannelSupervisor {
     }
 
     /// Get current state of a channel.
-    /// Get current state of a channel.
     ///
     /// # Errors
     /// * `ChannelError::Unknown` if id not registered.
@@ -184,7 +181,6 @@ impl ChannelSupervisor {
             .ok_or(ChannelError::Unknown)
     }
 
-    /// Transition channel to next state if allowed.
     /// Transition channel to next state if permitted.
     ///
     /// # Errors
